@@ -1393,8 +1393,8 @@ export default function App() {
   );
 
   return (
-    <div style={{ minHeight: "100dvh", height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #0b1016 0%, #090d13 100%)", color: "#c9d1d9", fontFamily: '"Aptos", "Segoe UI", sans-serif', padding: isMobileLayout ? "6px" : "10px", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", borderRadius: isMobileLayout ? "14px" : "18px", overflow: "hidden", background: "#0c1219", border: "1px solid rgba(90, 108, 135, 0.18)", boxShadow: isMobileLayout ? "none" : "0 14px 36px rgba(2, 8, 23, 0.28)" }}>
+    <div style={{ minHeight: "100dvh", height: isMobileLayout ? "auto" : "100dvh", overflow: isMobileLayout ? "visible" : "hidden", background: "linear-gradient(180deg, #0b1016 0%, #090d13 100%)", color: "#c9d1d9", fontFamily: '"Aptos", "Segoe UI", sans-serif', padding: isMobileLayout ? "6px" : "10px", boxSizing: "border-box" }}>
+      <div style={{ display: "flex", flexDirection: "column", minHeight: isMobileLayout ? "auto" : "100%", height: isMobileLayout ? "auto" : "100%", borderRadius: isMobileLayout ? "14px" : "18px", overflow: isMobileLayout ? "visible" : "hidden", background: "#0c1219", border: "1px solid rgba(90, 108, 135, 0.18)", boxShadow: isMobileLayout ? "none" : "0 14px 36px rgba(2, 8, 23, 0.28)" }}>
         <div style={{ padding: isMobileLayout ? "14px" : "16px 18px", borderBottom: "1px solid rgba(90, 108, 135, 0.16)", background: "#111821" }}>
           <div style={{ display: "flex", alignItems: isMobileLayout ? "stretch" : "center", gap: "14px", flexWrap: isMobileLayout ? "nowrap" : "wrap", flexDirection: isMobileLayout ? "column" : "row" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: isMobileLayout ? 0 : "220px" }}>
@@ -1455,7 +1455,7 @@ export default function App() {
           </div>
         </div>
 
-        <div ref={shellBodyRef} style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", flexDirection: isMobileLayout ? "column" : "row" }}>
+        <div ref={shellBodyRef} style={{ flex: isMobileLayout ? "0 0 auto" : 1, display: "flex", minHeight: isMobileLayout ? "min(92dvh, 760px)" : 0, height: isMobileLayout ? "min(92dvh, 760px)" : "auto", overflow: isMobileLayout ? "visible" : "hidden", flexDirection: isMobileLayout ? "column" : "row" }}>
           {isMobileLayout ? (
             <>
               <div style={{ display: "flex", gap: "8px", padding: "10px 12px", borderBottom: "1px solid rgba(90, 108, 135, 0.12)", background: "#101720", flexWrap: "wrap" }}>

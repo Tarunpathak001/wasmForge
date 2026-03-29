@@ -48,8 +48,6 @@ flowchart TD
     PG --> TERM
 
     IO --> OPFS["Origin Private File System<br/>persistent local files + DB state"]
-    SQ --> OPFS
-    PG --> OPFS
     SW --> CACHE["Cached Pyodide runtime,<br/>stdlib, wheels, and app assets"]
 ```
 
@@ -76,6 +74,9 @@ flowchart TD
     SW["ServiceWorker Cache<br/>serves Pyodide binary, stdlib, numpy, pandas from disk<br/>zero network calls on every load after first"]
 
     UI -->|"postMessage (non-blocking)"| Router
+    UI -->|"postMessage (non-blocking)"| IO
+    UI -->|"service worker registration"| SW
+    
     Router --> PY
     Router --> JS
     Router --> SQLITE
@@ -86,12 +87,8 @@ flowchart TD
     SQLITE --> TERM
     PG --> TERM
 
-    PY --> IO
-    JS --> IO
-    SQLITE --> IO
-    PG --> IO
-
-    IO --> SW
+    IO --> OPFS["Origin Private File System<br/>persistent local files + DB state"]
+    SW --> CACHE["Local Cache Persistence<br/>runtimes, stdlib, wheels"]
 ```
 
 The main thread never executes user code. A crash or infinite loop in any Worker cannot freeze the UI.

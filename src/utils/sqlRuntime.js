@@ -2,6 +2,11 @@ export function getFileExtension(filename) {
   return filename?.split(".").pop()?.toLowerCase() ?? "";
 }
 
+function normalizeWorkspaceSegment(workspaceName = "") {
+  const normalized = String(workspaceName ?? "").trim();
+  return encodeURIComponent(normalized || "python-experiments");
+}
+
 export function getRuntimeKind(filename) {
   switch (getFileExtension(filename)) {
     case "py":
@@ -38,8 +43,9 @@ function getStem(filename = "") {
   return filename.replace(/\.[^.]+$/u, "") || "database";
 }
 
-export function getSqlDatabaseDescriptor(filename) {
+export function getSqlDatabaseDescriptor(filename, workspaceName = "python-experiments") {
   const stem = getStem(filename);
+  const workspaceSegment = normalizeWorkspaceSegment(workspaceName);
 
   switch (getRuntimeKind(filename)) {
     case "sqlite":
@@ -54,7 +60,7 @@ export function getSqlDatabaseDescriptor(filename) {
       return {
         engine: "pglite",
         engineLabel: getSqlEngineLabel("pglite"),
-        databaseKey: `wasmforge/pglite/${encodeURIComponent(stem)}`,
+        databaseKey: `wasmforge/workspaces/${workspaceSegment}/pglite/${encodeURIComponent(stem)}`,
         databaseLabel: `${stem}.pgdata`,
       };
 

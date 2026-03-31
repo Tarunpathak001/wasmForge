@@ -283,6 +283,51 @@ function normalizeResultSet(result, index, databaseLabel) {
   }
 }
 
+async function inspectPgliteSchema(database) {
+  const schemaResults = await database.exec(`
+    SELECT
+      tables.table_name,
+      tables.table_type,
+      columns.column_name,
+      columns.data_type
+    FROM information_schema.tables AS tables
+    LEFT JOIN information_schema.columns AS columns
+      ON columns.table_schema = tables.table_schema
+     AND columns.table_name = tables.table_name
+    WHERE tables.table_schema = 'public'
+      AND tables.table_name NOT LIKE 'pg_%'
+    ORDER BY tables.table_name, columns.ordinal_position
+  `, {
+    rowMode: 'array',
+  })
+
+  const rows = schemaResults[0]?.rows ?? []
+  const tables = []
+  let currentTable = null
+
+  for (const row of rows) {
+    const [tableName, tableType, columnName, dataType] = row
+
+    if (!currentTable || currentTable.name !== tableName) {
+      currentTable = {
+        name: tableName,
+        type: tableType === 'VIEW' ? 'view' : 'table',
+        columns: [],
+      }
+      tables.push(currentTable)
+    }
+
+    if (columnName) {
+      currentTable.columns.push({
+        name: columnName,
+        type: dataType || 'unknown',
+      })
+    }
+  }
+
+  return { tables }
+}
+
 async function ensureDatabase(databaseKey, databaseLabel) {
   if (activeDatabase && activeDatabaseKey === databaseKey) {
     return activeDatabase
@@ -577,6 +622,7 @@ async function executeQuery({ id, sql, databaseKey, databaseLabel, resetDatabase
       const resultSets = rawResults.length > 0
         ? rawResults.map((result, index) => normalizeResultSet(result, index, databaseLabel))
         : [createSummaryResultSet({ statementIndex: 0, databaseLabel, affectedRows: 0 })]
+      const schema = await inspectPgliteSchema(database)
 
       self.postMessage({
         type: 'result',
@@ -589,6 +635,7 @@ async function executeQuery({ id, sql, databaseKey, databaseLabel, resetDatabase
           recoveryMessage: recoveryDetails?.recoveryMessage || '',
           restoredFromOpfs: hadPersistedState && !recoveryDetails,
           storageRecovered: Boolean(recoveryDetails),
+          schema,
           resultSets,
         },
       })
@@ -638,4 +685,4 @@ self.onmessage = async (event) => {
 }
 
 self.postMessage({ type: 'ready' })
-postStatus('PostgreSQL worker ready')
+postStatus('PostgreSQL ready')

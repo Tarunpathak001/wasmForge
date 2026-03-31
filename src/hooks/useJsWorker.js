@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const DEFAULT_FILENAME = 'main.js'
 
 function createIdleStatus() {
-  return 'Loading JS/TS runtime...'
+  return 'Preparing JavaScript environment...'
 }
 
 export function useJsWorker({
@@ -60,14 +60,14 @@ export function useJsWorker({
     crashCountRef.current = attempt
     const delayMs = Math.min((attempt - 1) * 1000, 5000)
     const statusMessage = attempt === 1
-      ? 'Recovering JS/TS runtime...'
-      : `Recovering JS/TS runtime (retry ${attempt})...`
+      ? 'Recovering JavaScript environment...'
+      : `Recovering JavaScript environment (retry ${attempt})...`
 
     setStatus(statusMessage)
     onStderrRef.current?.(
       delayMs > 0
-        ? `[WasmForge] Restarting JS/TS runtime in ${Math.ceil(delayMs / 1000)}s...\n`
-        : '[WasmForge] Restarting JS/TS runtime...\n',
+        ? `[WasmForge] Restarting JavaScript environment in ${Math.ceil(delayMs / 1000)}s...\n`
+        : '[WasmForge] Restarting JavaScript environment...\n',
     )
 
     respawnTimeoutRef.current = setTimeout(() => {
@@ -100,7 +100,7 @@ export function useJsWorker({
         case 'ready':
           crashCountRef.current = 0
           setIsReady(true)
-          setStatus('JS/TS runtime ready')
+          setStatus('JavaScript ready')
           onReadyRef.current?.()
           break
 
@@ -119,7 +119,7 @@ export function useJsWorker({
 
         case 'done':
           setIsRunning(false)
-          setStatus(error ? 'Execution failed' : 'JS/TS runtime ready')
+          setStatus(error ? 'Execution failed' : 'JavaScript ready')
           onDoneRef.current?.(error)
           break
 
@@ -129,7 +129,7 @@ export function useJsWorker({
     }
 
     worker.onerror = (err) => {
-      const message = err?.message || 'JS/TS worker crashed'
+      const message = err?.message || 'JavaScript environment crashed'
 
       try {
         worker.terminate()
@@ -139,7 +139,7 @@ export function useJsWorker({
 
       setIsReady(false)
       setIsRunning(false)
-      setStatus('JS/TS runtime crashed')
+      setStatus('JavaScript unavailable')
       onStderrRef.current?.(`[WasmForge] ${message}\n`)
       onDoneRef.current?.(message)
 
@@ -158,12 +158,12 @@ export function useJsWorker({
 
   const runCode = useCallback((payload) => {
     if (!workerRef.current || !isReady) {
-      onStderrRef.current?.('[WasmForge] JS/TS runtime is still loading. Please wait...\n')
+      onStderrRef.current?.('[WasmForge] The JavaScript environment is still loading. Please wait...\n')
       return
     }
 
     if (isRunning) {
-      onStderrRef.current?.('[WasmForge] A JS/TS program is already running.\n')
+      onStderrRef.current?.('[WasmForge] A JavaScript session is already running.\n')
       return
     }
 
@@ -173,7 +173,7 @@ export function useJsWorker({
 
     setIsRunning(true)
     setStatus('Running...')
-    onProgressRef.current?.('Running JS/TS code...')
+    onProgressRef.current?.('Running JavaScript...')
 
     workerRef.current.postMessage({
       type: 'run',
@@ -193,7 +193,7 @@ export function useJsWorker({
 
     setIsRunning(false)
     setIsReady(false)
-    setStatus('JS/TS runtime reset')
+    setStatus('JavaScript restarted')
     onStderrRef.current?.('\n[WasmForge] Execution killed by user.\n')
     onDoneRef.current?.('Killed by user')
     spawnWorkerRef.current?.()

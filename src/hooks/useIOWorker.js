@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export function useIOWorker({ onError, onWriteFlushed } = {}) {
+export function useIOWorker({ workspaceName = 'python-experiments', onError, onWriteFlushed } = {}) {
   const workerRef = useRef(null)
   const nextRequestIdRef = useRef(0)
   const pendingRequestsRef = useRef(new Map())
@@ -38,7 +38,7 @@ export function useIOWorker({ onError, onWriteFlushed } = {}) {
 
   const attachWorker = useCallback((worker) => {
     worker.onmessage = (event) => {
-      const { id, result, error, type, filename } = event.data
+      const { id, result, error, type, filename, workspaceName: eventWorkspaceName } = event.data
 
       if (type === 'write_error') {
         const writeError = new Error(
@@ -46,12 +46,16 @@ export function useIOWorker({ onError, onWriteFlushed } = {}) {
             ? `Failed to save ${filename}: ${error}`
             : (error || 'Workspace write failed')
         )
+        writeError.details = {
+          workspaceName: eventWorkspaceName,
+          filename,
+        }
         onErrorRef.current?.(writeError)
         return
       }
 
       if (type === 'write_flushed') {
-        onWriteFlushedRef.current?.(filename)
+        onWriteFlushedRef.current?.(filename, eventWorkspaceName)
         return
       }
 
@@ -122,49 +126,93 @@ export function useIOWorker({ onError, onWriteFlushed } = {}) {
     })
   }, [])
 
+  const withWorkspace = useCallback((payload) => ({
+    ...payload,
+    workspaceName: payload.workspaceName ?? workspaceName,
+  }), [workspaceName])
+
   const scheduleWrite = useCallback((filename, content) => {
+    const payload = withWorkspace({
+      type: 'schedule_write',
+      filename,
+      content,
+    })
+
     if (!workerRef.current) {
-      scheduledWritesRef.current.push({
-        type: 'schedule_write',
-        filename,
-        content,
-      })
+      scheduledWritesRef.current.push(payload)
       createWorkerRef.current?.()
       return
     }
 
-    workerRef.current.postMessage({ type: 'schedule_write', filename, content })
-  }, [])
+    workerRef.current.postMessage(payload)
+  }, [withWorkspace])
 
-  const listFiles = useCallback(() => callWorker({ type: 'list' }), [callWorker])
-  const readFile = useCallback((filename) => callWorker({ type: 'read', filename }), [callWorker])
-  const writeFile = useCallback((filename, content) => callWorker({ type: 'write', filename, content }), [callWorker])
+  const listFiles = useCallback(
+    (workspaceOverride) => callWorker(withWorkspace({ type: 'list', workspaceName: workspaceOverride })),
+    [callWorker, withWorkspace],
+  )
+  const readFile = useCallback(
+    (filename, scope = 'workspace', workspaceOverride) =>
+      callWorker(withWorkspace({ type: 'read', filename, scope, workspaceName: workspaceOverride })),
+    [callWorker, withWorkspace],
+  )
+  const writeFile = useCallback(
+    (filename, content, scope = 'workspace', workspaceOverride) =>
+      callWorker(withWorkspace({ type: 'write', filename, content, scope, workspaceName: workspaceOverride })),
+    [callWorker, withWorkspace],
+  )
+  const deleteFile = useCallback(
+    (filename, scope = 'workspace', workspaceOverride) =>
+      callWorker(withWorkspace({ type: 'delete', filename, scope, workspaceName: workspaceOverride })),
+    [callWorker, withWorkspace],
+  )
+  const renameFile = useCallback(
+    (filename, nextFilename, workspaceOverride) =>
+      callWorker(withWorkspace({ type: 'rename', filename, nextFilename, workspaceName: workspaceOverride })),
+    [callWorker, withWorkspace],
+  )
   const fileExists = useCallback(
-    (filename, scope = 'workspace') => callWorker({ type: 'exists', filename, scope }),
-    [callWorker],
+    (filename, scope = 'workspace') => callWorker(withWorkspace({ type: 'exists', filename, scope })),
+    [callWorker, withWorkspace],
   )
   const readBinaryFile = useCallback(
-    (filename, scope = 'sqlite') => callWorker({ type: 'read_binary', filename, scope }),
-    [callWorker],
+    (filename, scope = 'sqlite') =>
+      callWorker(withWorkspace({ type: 'read_binary', filename, scope })),
+    [callWorker, withWorkspace],
   )
   const writeBinaryFile = useCallback(
     (filename, content, scope = 'sqlite') =>
-      callWorker({ type: 'write_binary', filename, content, scope }),
+      callWorker(withWorkspace({ type: 'write_binary', filename, content, scope })),
+    [callWorker, withWorkspace],
+  )
+  const flushWrite = useCallback(
+    (filename) => callWorker(withWorkspace({ type: 'flush', filename })),
+    [callWorker, withWorkspace],
+  )
+  const flushAllWrites = useCallback(() => callWorker({ type: 'flush_all' }), [callWorker])
+  const listWorkspaces = useCallback(
+    () => callWorker({ type: 'list_workspaces' }),
     [callWorker],
   )
-  const flushWrite = useCallback((filename) => callWorker({ type: 'flush', filename }), [callWorker])
-  const flushAllWrites = useCallback(() => callWorker({ type: 'flush_all' }), [callWorker])
+  const createWorkspace = useCallback(
+    (name) => callWorker({ type: 'create_workspace', workspaceName: name }),
+    [callWorker],
+  )
 
   return {
     isReady,
     listFiles,
     readFile,
     writeFile,
+    deleteFile,
+    renameFile,
     fileExists,
     readBinaryFile,
     writeBinaryFile,
     scheduleWrite,
     flushWrite,
     flushAllWrites,
+    listWorkspaces,
+    createWorkspace,
   }
 }

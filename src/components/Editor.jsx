@@ -3,28 +3,36 @@ import { useCallback, useEffect, useRef } from 'react'
 import MonacoEditor from '@monaco-editor/react'
 import { DEFAULT_PYTHON } from '../constants/defaultPython.js'
 
-const RECOVERY_STORAGE_KEY = 'wasmforge:pending-workspace-writes'
+const DEFAULT_RECOVERY_STORAGE_KEY = 'wasmforge:pending-workspace-writes'
 
-function persistDraft(filename, content) {
+function persistDraft(filename, content, storageKey = DEFAULT_RECOVERY_STORAGE_KEY) {
   if (typeof window === 'undefined' || !filename) {
     return
   }
 
   try {
-    const raw = window.localStorage.getItem(RECOVERY_STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey)
     const drafts = raw ? JSON.parse(raw) : {}
     const nextDrafts = drafts && typeof drafts === 'object' && !Array.isArray(drafts)
       ? drafts
       : {}
 
     nextDrafts[filename] = content
-    window.localStorage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(nextDrafts))
+    window.localStorage.setItem(storageKey, JSON.stringify(nextDrafts))
   } catch {
     // Recovery storage is best-effort only.
   }
 }
 
-function Editor({ code, filename, onChange, onMount, language = 'python', readOnly = false }) {
+function Editor({
+  code,
+  filename,
+  onChange,
+  onMount,
+  language = 'python',
+  readOnly = false,
+  draftStorageKey = DEFAULT_RECOVERY_STORAGE_KEY,
+}) {
   const editorRef = useRef(null)
   const modelChangeDisposableRef = useRef(null)
   const filenameRef = useRef(filename)
@@ -44,11 +52,11 @@ function Editor({ code, filename, onChange, onMount, language = 'python', readOn
     editorRef.current = editor
     modelChangeDisposableRef.current?.dispose()
     modelChangeDisposableRef.current = editor.onDidChangeModelContent(() => {
-      persistDraft(filenameRef.current, editor.getValue())
+      persistDraft(filenameRef.current, editor.getValue(), draftStorageKey)
     })
 
     onMount?.(editor, monaco)
-  }, [onMount])
+  }, [draftStorageKey, onMount])
 
   return (
     <MonacoEditor
@@ -58,7 +66,7 @@ function Editor({ code, filename, onChange, onMount, language = 'python', readOn
       value={code}
       onChange={(val) => {
         const nextValue = val ?? ''
-        persistDraft(filenameRef.current, nextValue)
+        persistDraft(filenameRef.current, nextValue, draftStorageKey)
         onChange?.(nextValue)
       }}
       onMount={handleMount}

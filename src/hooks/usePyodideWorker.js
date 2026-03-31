@@ -19,6 +19,7 @@ function canUseSharedStdin() {
 }
 
 export function usePyodideWorker({
+  workspaceName = 'python-experiments',
   onStdout,
   onStderr,
   onReady,
@@ -149,6 +150,7 @@ export function usePyodideWorker({
           setIsReady(true)
           onReadyRef.current?.({
             stdinSupported,
+            workspaceName,
             crossOriginIsolated:
               typeof window !== 'undefined' &&
               window.crossOriginIsolated === true,
@@ -209,8 +211,9 @@ export function usePyodideWorker({
       type: 'init',
       baseUrl: BASE_URL,
       stdinBuffer: createStdinChannel(),
+      workspaceName,
     })
-  }, [clearWatchdog, createStdinChannel, resetWatchdog, stdinSupported])
+  }, [clearWatchdog, createStdinChannel, resetWatchdog, stdinSupported, workspaceName])
 
   spawnWorkerRef.current = spawnWorker
 

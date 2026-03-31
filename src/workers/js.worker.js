@@ -501,7 +501,7 @@ ${executableSource}
     stopFlushing()
     isRunning = false
     self.postMessage({ type: 'done', error: executionError })
-    postStatus('JS/TS runtime ready')
+    postStatus('JavaScript ready')
     resetExecutionState()
   }
 }
@@ -511,7 +511,7 @@ self.onmessage = async (event) => {
 
   switch (type) {
     case 'init':
-      postStatus('JS/TS runtime ready')
+      postStatus('JavaScript ready')
       self.postMessage({ type: 'ready' })
       break
 
@@ -524,7 +524,7 @@ self.onmessage = async (event) => {
       stopFlushing()
       isRunning = false
       self.postMessage({ type: 'done', error: 'Execution killed by user' })
-      postStatus('JS/TS runtime ready')
+      postStatus('JavaScript ready')
       resetExecutionState()
       break
 

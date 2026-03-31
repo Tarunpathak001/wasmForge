@@ -1,167 +1,265 @@
-# WasmForge
+<div align="center">
+  <img src="./wasmforge-logo.png" alt="WasmForge Logo" width="200" />
 
-**A browser IDE that runs code, saves files, and works offline.**
+  # WasmForge
 
-Built by **Team Codeinit** for **Watch The Code 2026**.
+  **Your entire dev environment. One browser tab. Zero servers.**
 
-WasmForge is our take on a zero-backend WebIDE. The idea is simple: open one browser tab and get an editor, terminal, file system, Python runtime, JavaScript/TypeScript runtime, and SQL playground without needing a server.
+  [![Live Demo](https://img.shields.io/badge/Live-Demo-%232EA043?style=for-the-badge&logo=vercel)](https://wasm-forge.vercel.app/)
+  [![Watch The Code 2026](https://img.shields.io/badge/Watch_The_Code-2026-1a252f?style=for-the-badge)](https://gehu.in/hack)
+  ![PS #10 WebIDE](https://img.shields.io/badge/PS_%2310-WebIDE-58a6ff?style=for-the-badge)
 
-## Why We Built This
+</div>
 
-Most online IDEs still depend on a backend for code execution, storage, or environment setup. We wanted to push more of that experience into the browser itself using WebAssembly, Web Workers, and modern browser storage APIs.
+WasmForge is a fully in-browser IDE where Python, JavaScript/TypeScript, SQLite, and PostgreSQL all execute on your local CPU via WebAssembly. No backend server. No cloud execution. No network dependency after first load.
 
-That means:
+**[→ Open the live demo](https://wasm-forge.vercel.app/)**
 
-- code runs locally in the browser
-- files stay in the browser with persistent storage
-- the UI stays responsive even when runtimes are busy
-- the app can keep working after assets are cached once
+Turn on Airplane Mode after it loads. Everything still works.
 
-## What You Can Do
+---
 
-- Write and switch between multiple files in Monaco Editor
-- Run Python in a dedicated Pyodide worker
-- Use `input()` in Python through the terminal
-- Run `.js` and `.ts` files in a sandboxed worker
-- Execute `.sql` files with SQLite
-- Execute `.pg` files with PGlite
-- Keep files saved across refreshes using OPFS
-- Use the app offline after the first cache warm-up
+## What Makes This Different
 
-## Supported Files
+Every existing cloud IDE — Replit, CodeSandbox, GitHub Codespaces — puts the runtime on a server. That single architectural choice creates three structural problems: your code hits a third-party server on every run, one network drop kills your entire environment, and you pay per hour for compute you didn't ask for.
 
-| File type | Runtime | Output |
-| --- | --- | --- |
-| `.py` | Pyodide | Terminal |
-| `.js` | JS Worker | Terminal |
-| `.ts` | TS -> JS Worker | Terminal |
-| `.sql` | SQLite Worker | Results panel |
-| `.pg` | PGlite Worker | Results panel |
+WasmForge eliminates the server entirely. Python runs via Pyodide (CPython compiled to WebAssembly) directly in your browser tab. SQL runs via sql.js and PGLite — both compiled to Wasm. Files persist to your local disk via the Origin Private File System. A ServiceWorker caches every binary on first load so nothing ever fetches from the network again.
 
-## What Makes It Interesting
+The architecture is not an optimization of the cloud model. It is a replacement for it.
 
-### Python in the browser
+---
 
-Python runs inside a Worker using Pyodide, so the main UI does not freeze while code is running.
+## System Diagram
 
-### Interactive terminal input
+```mermaid
+flowchart TD
+    UI["React UI<br/>Monaco Editor • File Tree • Xterm.js"] --> Router["Execution Router<br/>File extension -> runtime"]
+    UI --> IO["I/O Worker<br/>OPFS read/write"]
+    UI --> SW["Service Worker Cache<br/>offline assets after first load"]
 
-`input()` works through `SharedArrayBuffer` and `Atomics`, which lets Python pause for terminal input and continue after the user responds.
+    Router --> PY["Python Worker<br/>Pyodide / CPython -> Wasm"]
+    Router --> JS["JS/TS Worker<br/>Sucrase + sandboxed execution"]
+    Router --> SQ["SQLite Worker<br/>sql.js -> Wasm"]
+    Router --> PG["PostgreSQL Worker<br/>PGLite -> Wasm"]
 
-### Real browser persistence
+    PY --> TERM["Terminal / Results UI"]
+    JS --> TERM
+    SQ --> TERM
+    PG --> TERM
 
-Files are written to the Origin Private File System, so they survive refreshes and browser restarts.
+    IO --> OPFS["Origin Private File System<br/>persistent local files + DB state"]
+    SW --> CACHE["Cached Pyodide runtime,<br/>stdlib, wheels, and app assets"]
+```
 
-### SQL engines in-browser
+WasmForge is intentionally split into isolated browser workers so user code never runs on the main UI thread, while OPFS and the Service Worker provide persistence and offline execution.
 
-SQLite and PostgreSQL-style queries run in their own workers and render into a sortable results table.
+---
 
-### Offline-ready
+## How It Works
 
-The app is set up as a PWA and caches the heavy runtime assets locally, including Pyodide files and database assets.
+### Thread Isolation
 
-## Stack
+Browsers are single-threaded by default. Running a Python interpreter on the main thread would freeze the UI permanently on any blocking operation. WasmForge solves this with strict thread isolation — every runtime runs in a dedicated Web Worker, completely separated from the UI:
 
-- React
-- Vite
-- Monaco Editor
-- Xterm.js
-- Pyodide
-- sql.js
-- PGlite
-- sucrase
-- vite-plugin-pwa
-- OPFS
-- Web Workers
+The main thread never executes user code. A crash or infinite loop in any Worker cannot freeze the UI.
 
-## Project Structure
+### Infinite Loop Protection — Heartbeat Kill Mechanism
 
-- `src/App.jsx` - main app orchestration
-- `src/workers/pyodide.worker.js` - Python execution
-- `src/workers/js.worker.js` - JavaScript and TypeScript execution
-- `src/workers/io.worker.js` - persistent file I/O through OPFS
-- `src/workers/sqlite.worker.js` - SQLite runtime
-- `src/workers/pglite.worker.js` - PostgreSQL-style runtime
-- `src/components/` - editor, terminal, file tree, and SQL results UI
+If a Python script enters an infinite loop, the Worker thread is completely blocked and cannot recover on its own. WasmForge handles this with a heartbeat watchdog:
 
-## Run It Locally
+- The Python Worker emits a heartbeat signal every 1 second during execution
+- The main thread monitors for this signal
+- If no heartbeat arrives within 5 seconds, the main thread calls `worker.terminate()` and automatically spawns a fresh Worker
+- The user sees one error line in the terminal. The UI never freezes. No page refresh needed.
+
+```js
+// usePyodideWorker.js
+watchdogRef.current = setTimeout(() => {
+  workerRef.current.terminate()
+  spawnWorker() // fresh environment in < 100ms
+}, 5000)
+```
+
+### Offline-First — ServiceWorker + Local Assets
+
+Pyodide with NumPy and pandas exceeds 25MB. On congested Wi-Fi this means a 45-second blank screen — unacceptable for any real demo.
+
+WasmForge ships the Pyodide runtime and all required wheels as local assets in `public/pyodide/` and `public/pyodide-wheels/`. The Vite PWA plugin generates a ServiceWorker that caches all of these on first load. Every subsequent visit — including in Airplane Mode — loads in under 2 seconds from the local browser cache.
+
+```js
+// vite.config.js
+workbox: {
+  globPatterns: ['**/*.{js,css,html,wasm,zip,whl,json}'],
+  maximumFileSizeToCacheInBytes: 50 * 1024 * 1024
+}
+```
+
+### File Persistence — OPFS I/O Worker
+
+The default Wasm virtual filesystem lives in volatile memory. A tab refresh destroys everything.
+
+WasmForge uses a dedicated I/O Worker that writes every editor change synchronously to the Origin Private File System — the browser's high-speed local storage API. OPFS synchronous access (`createSyncAccessHandle()`) is only available inside Web Workers, which is exactly why a dedicated I/O Worker exists instead of writing from the main thread.
+
+Files survive hard reloads, tab closes, and full browser restarts.
+
+### Interactive stdin — SharedArrayBuffer + Atomics
+
+Python's `input()` is a synchronous blocking call. A Web Worker cannot pause and wait for asynchronous user input without shared memory. WasmForge implements this with `SharedArrayBuffer` and `Atomics.wait()`:
+
+1. A `SharedArrayBuffer` is created on the main thread and passed to the Python Worker
+2. When Python calls `input()`, the Worker calls `Atomics.wait()` — blocking the Worker thread only, not the UI
+3. Xterm.js displays the prompt and collects keyboard input
+4. Main thread writes the value into the shared buffer and calls `Atomics.notify()`
+5. Worker unblocks. Python receives the value. Execution continues.
+
+This requires cross-origin isolation headers — configured in `vite.config.js` for development and `vercel.json` for production. Verify it is active:
+
+```js
+window.crossOriginIsolated // must return true
+```
+
+---
+
+## Supported Languages
+
+| File | Runtime | Output |
+|------|---------|--------|
+| `.py` | Pyodide (CPython 3.13 → Wasm) | Terminal |
+| `.js` | Sandboxed JS Worker | Terminal |
+| `.ts` | Sucrase transpiler → JS Worker | Terminal |
+| `.sql` | sql.js (SQLite → Wasm) | Results grid + schema inspector |
+| `.pg` | PGLite (PostgreSQL → Wasm) | Results grid + schema inspector |
+
+**Pre-loaded packages (offline, zero CDN):** NumPy, pandas, python-dateutil, pytz, six, tzdata
+
+---
+
+## Tech Stack
+
+| Technology | Role |
+|-----------|------|
+| React 18 | UI orchestration, state management |
+| Vite + vite-plugin-pwa | Build tooling, ServiceWorker generation |
+| Monaco Editor | VS Code's editing engine for the editor surface |
+| Pyodide (bundled locally) | CPython 3.13 compiled to WebAssembly |
+| sql.js | SQLite compiled to WebAssembly |
+| PGLite | PostgreSQL compiled to WebAssembly with OPFS-backed persistence |
+| Xterm.js + xterm-addon-fit | ANSI terminal emulator with auto-resize and 10,000 line scrollback |
+| Sucrase | Runtime TypeScript transpilation |
+| Web Workers | Isolated execution for Python, JS/TS, SQLite, PostgreSQL, and file I/O |
+| OPFS | Persistent local storage for files and SQL state |
+| SharedArrayBuffer + Atomics | Blocking `input()` support without freezing the UI |
+
+---
+
+## Scalability & Reliability
+
+### Scalability
+
+- Compute scales with the user's machine, not with a shared backend server, so there is no per-user execution bottleneck for Python, JS, SQLite, or PostgreSQL workloads.
+- Deployment stays simple because the hosted surface is mostly static assets plus cache headers. Scaling distribution is a CDN problem, not a runtime orchestration problem.
+- The architecture is modular: each runtime lives in its own Worker, so adding a new language or execution engine is an extension of the routing layer rather than a rewrite of the app.
+- Workspace-scoped OPFS storage keeps files and database state isolated, which makes the model easier to extend toward larger projects, multiple workspaces, or optional future sync.
+
+### Reliability
+
+- The UI stays responsive because user code never runs on the main thread.
+- Python infinite loops are contained by a heartbeat watchdog that terminates and respawns the Worker instead of freezing the page.
+- Files persist through reloads and browser restarts via OPFS, and SQL state is restored from browser storage on the next run.
+- After the first load, the Service Worker serves the runtime binaries and wheels locally, so the app continues to function offline and is less sensitive to network instability.
+- Interactive `input()` is implemented with `SharedArrayBuffer` and `Atomics`, which allows synchronous terminal input without blocking the interface.
+
+This does not remove every limitation of browser execution, but it gives WasmForge a resilient prototype architecture: isolated failures, persistent state, offline reuse, and no backend outage dependency.
+
+---
+
+## Local Setup
 
 ```bash
+git clone https://github.com/WTC-Group-2/wtc-round-2-group-2-codeinit.git
+cd wtc-round-2-group-2-codeinit
 npm install
 npm run dev
 ```
 
-To create a production build:
+Open `http://localhost:5173`. Verify in the browser console:
+
+```js
+window.crossOriginIsolated // must return true
+```
+
+If this returns `false`, the COOP/COEP headers are not applying. `input()` will not work until this is resolved.
+
+**Production build:**
 
 ```bash
 npm run build
-```
-
-To preview the production build:
-
-```bash
 npm run preview
 ```
 
-## Quick Things To Try
+After build, open DevTools → Application → Service Workers. Status must show **activated and running**. Check the Network tab — every asset should show **(ServiceWorker)**, not a network request.
 
-### Python
+---
 
-```python
-name = input("Enter your name: ")
-print("Hello, " + name)
+## The Proof
+
+The architecture makes one claim: WasmForge runs entirely offline after first load, with real Python execution, interactive input, and persistent files.
+
+Here is how to verify that claim in 90 seconds:
+
+1. Open the [live demo](https://wasm-forge.vercel.app/)
+2. Write a NumPy script that calls `input()`
+3. Turn on Airplane Mode
+4. Click Run — terminal prompts for input, type a value, output appears
+5. Hard refresh the tab (`Ctrl+Shift+R`)
+6. The file is still there
+
+Every step of that sequence is a verifiable claim with a specific technical mechanism behind it. None of it depends on a backend.
+
+---
+
+## Repository Structure
+
+```
+src/
+├── App.jsx                  — responsive shell, execution router, panel orchestration
+├── main.jsx                 — React root, ServiceWorker registration
+├── monacoSetup.js           — Monaco local worker config, no CDN dependency
+├── constants/
+│   └── defaultPython.js     — starter Python template
+├── components/
+│   ├── Editor.jsx           — Monaco editor integration
+│   ├── FileTree.jsx         — file explorer with create/rename/delete
+│   ├── SchemaInspector.jsx  — SQL schema tree from runtime metadata
+│   ├── SqlResultsPanel.jsx  — SQL results grid and execution summaries
+│   ├── Terminal.jsx         — Xterm.js, ANSI colors, 10k line scrollback
+│   └── WorkspaceSwitcher.jsx — workspace creation and workspace switching
+├── hooks/
+│   ├── useIOWorker.js       — OPFS read/write/list abstraction
+│   ├── useJsWorker.js       — JS/TS runtime management
+│   ├── usePyodideWorker.js  — Python worker lifecycle, watchdog, kill + respawn
+│   └── useSqlWorkers.js     — SQLite and PostgreSQL worker lifecycle
+├── utils/
+│   └── sqlRuntime.js        — SQL runtime routing and database descriptors
+└── workers/
+    ├── io.worker.js         — OPFS synchronous write API
+    ├── js.worker.js         — JS/TS execution sandbox
+    ├── pglite.worker.js     — PostgreSQL runtime in Wasm
+    ├── pyodide.worker.js    — CPython Wasm, stdout/stderr capture, heartbeat
+    └── sqlite.worker.js     — SQLite runtime in Wasm
+
+public/
+├── pyodide/                 — local Pyodide runtime, no CDN dependency
+│   ├── pyodide.js
+│   ├── pyodide.asm.wasm
+│   ├── python_stdlib.zip
+│   └── pyodide-lock.json
+└── pyodide-wheels/          — pre-packaged wheels for offline execution
+    ├── numpy-*.whl
+    ├── pandas-*.whl
+    └── ...
 ```
 
-### TypeScript
+---
 
-```ts
-const nums: number[] = [1, 2, 3]
-console.log(nums.reduce((sum, value) => sum + value, 0))
-```
-
-### SQLite
-
-```sql
-create table if not exists users (id integer primary key, name text);
-insert into users (name) values ('Ada'), ('Linus');
-select * from users order by id;
-```
-
-### PostgreSQL
-
-```sql
-select 1 as one;
-```
-
-## Deployment Note
-
-For terminal input to work, the app needs cross-origin isolation.
-
-After deployment, check:
-
-```js
-window.crossOriginIsolated
-```
-
-It should return `true`.
-
-This repo already includes the required headers in `vercel.json`.
-
-## Best Demo Flow
-
-If you are demoing this project:
-
-1. Open the app once while online
-2. Let the runtimes finish loading
-3. Refresh once so the service worker is active
-4. Then test the offline flow
-
-## Current Limits
-
-- The workspace explorer is still flat-file only
-- JS/TS worker currently does not support ESM imports or TSX
-- Best experience is on Chromium-based browsers
-
-## Final Note
-
-This project was built as a hackathon-style exploration of how far a WebIDE can go with just browser technologies. The goal was not just to run code in the browser, but to make it feel like a small local development environment living inside one tab.
+**Team Codeinit — Watch The Code 2026 — PS #10: WebIDE**

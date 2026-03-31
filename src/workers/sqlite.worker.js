@@ -34,7 +34,7 @@ async function ensureRuntime() {
     return sqlRuntimePromise
   }
 
-  postStatus('Loading SQLite runtime...')
+  postStatus('Preparing SQLite...')
 
   sqlRuntimePromise = initSqlJs({
     locateFile: () => sqlWasmUrl,
@@ -89,6 +89,47 @@ function createSummaryStatementResultSet({ statementIndex, databaseLabel, rowsAf
 
 function isMutatingStatement(statementSql) {
   return /^(insert|update|delete|replace)\b/i.test(statementSql.trim())
+}
+
+function escapeIdentifier(value) {
+  return String(value ?? '').replace(/"/g, '""')
+}
+
+function mapExecRows(result) {
+  const columns = result?.columns ?? []
+  const values = result?.values ?? []
+
+  return values.map((row) => Object.fromEntries(
+    columns.map((columnName, index) => [columnName, row[index]]),
+  ))
+}
+
+function inspectSqliteSchema(database) {
+  const masterResult = database.exec(`
+    SELECT name, type
+    FROM sqlite_master
+    WHERE type IN ('table', 'view')
+      AND name NOT LIKE 'sqlite_%'
+    ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name
+  `)
+
+  const masterRows = mapExecRows(masterResult[0])
+  const tables = masterRows.map((entry) => {
+    const safeTableName = escapeIdentifier(entry.name)
+    const pragmaResult = database.exec(`PRAGMA table_info("${safeTableName}")`)
+    const columns = mapExecRows(pragmaResult[0]).map((column) => ({
+      name: column.name,
+      type: column.type || 'UNKNOWN',
+    }))
+
+    return {
+      name: entry.name,
+      type: entry.type === 'view' ? 'view' : 'table',
+      columns,
+    }
+  })
+
+  return { tables }
 }
 
 function executeStatements(database, sql, databaseLabel) {
@@ -233,6 +274,7 @@ async function executeQuery({ id, sql, databaseKey, databaseLabel, databaseBuffe
     }
 
     const exportedDatabase = activeDatabase.export()
+    const schema = inspectSqliteSchema(activeDatabase)
 
     self.postMessage(
       {
@@ -244,6 +286,7 @@ async function executeQuery({ id, sql, databaseKey, databaseLabel, databaseBuffe
           databaseLabel,
           durationMs: performance.now() - startedAt,
           resultSets,
+          schema,
           databaseBuffer: exportedDatabase.buffer,
         },
       },

@@ -9,8 +9,8 @@ function createPendingMap() {
 
 function createStatusState() {
   return {
-    sqlite: 'Loading SQLite runtime...',
-    pglite: 'Loading PostgreSQL runtime...',
+    sqlite: 'Preparing SQLite...',
+    pglite: 'Preparing PostgreSQL...',
   }
 }
 
@@ -118,7 +118,7 @@ export function useSqlWorkers({ onError } = {}) {
     worker.onerror = (event) => {
       const error = new Error(event.message || `${engine} worker crashed`)
       updateReady(engine, false)
-      updateStatus(engine, `${engine === 'sqlite' ? 'SQLite' : 'PostgreSQL'} worker crashed`)
+      updateStatus(engine, `${engine === 'sqlite' ? 'SQLite' : 'PostgreSQL'} unavailable`)
       rejectPendingForEngine(engine, error)
       onErrorRef.current?.(error, engine)
     }
@@ -139,8 +139,8 @@ export function useSqlWorkers({ onError } = {}) {
     const {
       rejectionError = createWorkerError(`${engine} worker restarted`),
       nextStatus = engine === 'sqlite'
-        ? 'Loading SQLite runtime...'
-        : 'Loading PostgreSQL runtime...',
+        ? 'Preparing SQLite...'
+        : 'Preparing PostgreSQL...',
     } = options
 
     if (worker) {
@@ -249,8 +249,8 @@ export function useSqlWorkers({ onError } = {}) {
     restartWorker(engine, {
       rejectionError: createWorkerError('Killed by user', { kind: 'killed' }),
       nextStatus: engine === 'sqlite'
-        ? 'SQLite runtime reset'
-        : 'PostgreSQL runtime reset',
+        ? 'SQLite restarted'
+        : 'PostgreSQL restarted',
     })
   }, [restartWorker])
 

@@ -9,6 +9,7 @@ let stdinBuffer = null
 let stdinSignalView = null
 let stdinBytesView = null
 let baseUrl = '/'
+let activeWorkspaceName = 'python-experiments'
 let initializationPromise = null
 const textDecoder = new TextDecoder()
 const STDIN_SIGNAL_INDEX = 0
@@ -78,10 +79,29 @@ function getPyodideAssetUrls() {
   }
 }
 
-function initWorker({ stdinBuffer: incomingStdinBuffer, baseUrl: incomingBaseUrl } = {}) {
+function normalizeWorkspaceName(name) {
+  const normalized = String(name ?? '').trim()
+  if (!normalized) {
+    return 'python-experiments'
+  }
+
+  if (normalized.includes('/') || normalized.includes('\\')) {
+    throw new Error('Workspace names cannot contain slashes')
+  }
+
+  return normalized
+}
+
+function initWorker({
+  stdinBuffer: incomingStdinBuffer,
+  baseUrl: incomingBaseUrl,
+  workspaceName,
+} = {}) {
   if (typeof incomingBaseUrl === 'string' && incomingBaseUrl.length > 0) {
     baseUrl = incomingBaseUrl
   }
+
+  activeWorkspaceName = normalizeWorkspaceName(workspaceName)
 
   const hasSharedArrayBuffer =
     typeof SharedArrayBuffer === 'function' &&
@@ -134,10 +154,19 @@ async function mountWorkspace() {
     return
   }
 
-  self.postMessage({ type: 'load_progress', msg: 'Mounting OPFS workspace...' })
+  self.postMessage({
+    type: 'load_progress',
+    msg: `Opening workspace "${activeWorkspaceName}"...`,
+  })
 
   const rootHandle = await navigator.storage.getDirectory()
-  workspaceHandle = await rootHandle.getDirectoryHandle('workspace', { create: true })
+  const workspacesRoot = await rootHandle.getDirectoryHandle('wasmforge-workspaces', {
+    create: true,
+  })
+  const workspaceDirectory = await workspacesRoot.getDirectoryHandle(activeWorkspaceName, {
+    create: true,
+  })
+  workspaceHandle = await workspaceDirectory.getDirectoryHandle('files', { create: true })
   workspaceMount = await pyodide.mountNativeFS('/workspace', workspaceHandle)
 
   pyodide.runPython(`
@@ -200,7 +229,7 @@ async function ensureLocalPackages(code) {
     return
   }
 
-  self.postMessage({ type: 'load_progress', msg: 'Resolving local Python packages...' })
+  self.postMessage({ type: 'load_progress', msg: 'Loading required Python packages...' })
   await pyodide.loadPackage(packagesToLoad)
 }
 
@@ -208,11 +237,11 @@ async function initPyodide() {
   try {
     const { indexURL, scriptURL, lockFileURL } = getPyodideAssetUrls()
 
-    self.postMessage({ type: 'load_progress', msg: 'Loading Pyodide runtime from local assets...' })
+    self.postMessage({ type: 'load_progress', msg: 'Loading Python environment...' })
 
     importScripts(scriptURL)
 
-    self.postMessage({ type: 'load_progress', msg: 'Initializing offline Python interpreter...' })
+    self.postMessage({ type: 'load_progress', msg: 'Starting Python...' })
 
     pyodide = await loadPyodide({
       indexURL,
@@ -252,7 +281,7 @@ sys.stderr = _WasmForgeStderr()
 builtins.input = _wasmforge_input
     `)
 
-    self.postMessage({ type: 'load_progress', msg: 'Preloading numpy and pandas...' })
+    self.postMessage({ type: 'load_progress', msg: 'Loading standard Python packages...' })
     await pyodide.loadPackage(['numpy', 'pandas'])
 
     self.postMessage({ type: 'ready' })
@@ -271,7 +300,7 @@ async function runPython(code, filename = 'main.py') {
   }
 
   if (!pyodide) {
-    self.postMessage({ type: 'stderr', data: '[WasmForge] Runtime not ready. Please wait.\n' })
+    self.postMessage({ type: 'stderr', data: '[WasmForge] Python is still loading. Please wait.\n' })
     self.postMessage({ type: 'done', error: 'Runtime not ready' })
     return
   }
@@ -327,6 +356,7 @@ self.onmessage = async (event) => {
     filename,
     stdinBuffer: incomingStdinBuffer,
     baseUrl: incomingBaseUrl,
+    workspaceName,
   } = event.data
 
   switch (type) {
@@ -334,6 +364,7 @@ self.onmessage = async (event) => {
       initWorker({
         stdinBuffer: incomingStdinBuffer,
         baseUrl: incomingBaseUrl,
+        workspaceName,
       })
       break
 

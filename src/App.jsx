@@ -1625,7 +1625,7 @@ export default function App() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "14px",
+            gap: "12px",
             height: "28px",
             minHeight: "28px",
             padding: "0 12px",
@@ -1642,16 +1642,6 @@ export default function App() {
               </div>
             ) : null}
           </div>
-
-          {!isMobileLayout ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "14px", color: "#9aa3ae", fontSize: "11px", flexShrink: 0 }}>
-              <ToolbarMenuLabel>File</ToolbarMenuLabel>
-              <ToolbarMenuLabel>Edit</ToolbarMenuLabel>
-              <ToolbarMenuLabel>Selection</ToolbarMenuLabel>
-              <ToolbarMenuLabel>Terminal</ToolbarMenuLabel>
-              <ToolbarMenuLabel>Help</ToolbarMenuLabel>
-            </div>
-          ) : null}
 
           <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", padding: "0 8px" }}>
             <ToolbarSearch
@@ -2077,34 +2067,17 @@ function LogoMark() {
   );
 }
 
-function ToolbarMenuLabel({ children }) {
-  return (
-    <span
-      style={{
-        color: "#8f98a3",
-        fontSize: "11px",
-        fontWeight: 500,
-        letterSpacing: "0.01em",
-        userSelect: "none",
-        cursor: "default",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 function ToolbarSearch({ value, onChange, onFocus }) {
   return (
     <label
       style={{
         width: "100%",
-        maxWidth: "420px",
+        maxWidth: "540px",
         height: "26px",
         display: "flex",
         alignItems: "center",
-        gap: "8px",
-        padding: "0 10px",
+        gap: "9px",
+        padding: "0 11px",
         background: "#121419",
         border: "1px solid rgba(255,255,255,0.06)",
         color: "#7d8590",
@@ -2128,18 +2101,6 @@ function ToolbarSearch({ value, onChange, onFocus }) {
           fontSize: "12px",
         }}
       />
-      <span
-        style={{
-          flexShrink: 0,
-          color: "#5e6670",
-          fontSize: "10px",
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          userSelect: "none",
-        }}
-      >
-        Search
-      </span>
     </label>
   );
 }

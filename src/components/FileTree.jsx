@@ -4,6 +4,9 @@ function FileTree({
   files,
   activeFile,
   activeWorkspace,
+  mode = "explorer",
+  searchQuery = "",
+  onSearchQueryChange,
   workspaces = [],
   onSelectWorkspace,
   onCreateWorkspace,
@@ -24,6 +27,7 @@ function FileTree({
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const createInputRef = useRef(null);
   const editInputRef = useRef(null);
+  const searchInputRef = useRef(null);
   const menuRef = useRef(null);
   const workspaceMenuRef = useRef(null);
   const workspaceButtonRef = useRef(null);
@@ -36,6 +40,13 @@ function FileTree({
     () => [...workspaces].sort((left, right) => left.localeCompare(right)),
     [workspaces],
   );
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const visibleFiles = useMemo(() => {
+    if (mode !== "search" || !normalizedSearchQuery) {
+      return orderedFiles;
+    }
+    return orderedFiles.filter((file) => file.name.toLowerCase().includes(normalizedSearchQuery));
+  }, [mode, normalizedSearchQuery, orderedFiles]);
 
   useEffect(() => {
     if (isCreating) {
@@ -50,6 +61,13 @@ function FileTree({
       editInputRef.current?.select?.();
     }
   }, [editingName]);
+
+  useEffect(() => {
+    if (mode === "search") {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select?.();
+    }
+  }, [mode]);
 
   useEffect(() => {
     if (!contextMenu && !workspaceMenuOpen) {
@@ -205,7 +223,7 @@ function FileTree({
             fontWeight: 700,
           }}
         >
-          Explorer
+          {mode === "search" ? "Search" : "Explorer"}
         </div>
 
         <div
@@ -314,8 +332,45 @@ function FileTree({
             fontWeight: 700,
           }}
         >
-          Files
+          {mode === "search" ? "Results" : "Files"}
         </div>
+
+        {mode === "search" ? (
+          <div
+            style={{
+              marginTop: "10px",
+              padding: "10px",
+              border: "1px solid rgba(255,255,255,0.05)",
+              borderRadius: "10px",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <SearchGlyph />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) => onSearchQueryChange?.(event.target.value)}
+                placeholder="Search files in this workspace"
+                spellCheck={false}
+                style={searchInputStyle}
+              />
+            </div>
+            <div
+              style={{
+                marginTop: "8px",
+                color: "#7a828d",
+                fontSize: "11px",
+                lineHeight: 1.5,
+              }}
+            >
+              {normalizedSearchQuery
+                ? `${visibleFiles.length} match${visibleFiles.length === 1 ? "" : "es"} in ${activeWorkspace}`
+                : "Type a filename or extension to filter this workspace instantly."}
+            </div>
+          </div>
+        ) : null}
 
         {workspaceMenuOpen ? (
           <div ref={workspaceMenuRef} style={workspaceMenuStyle}>
@@ -404,7 +459,15 @@ function FileTree({
         ) : null}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 0 10px", background: "#171a1f" }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          padding: "8px 0 10px",
+          background: "radial-gradient(circle at top left, rgba(0,122,204,0.08), transparent 26%), #171a1f",
+        }}
+      >
         {isCreating ? (
           <InlineRow meta={getFileMeta(createName || "new.py")}>
             <input
@@ -444,7 +507,16 @@ function FileTree({
           </div>
         ) : null}
 
-        {orderedFiles.map((file) => (
+        {orderedFiles.length > 0 && visibleFiles.length === 0 ? (
+          <div style={{ padding: "18px 12px", color: "#7b838e", fontSize: "12px", lineHeight: 1.55 }}>
+            No files match "{searchQuery}".
+            <div style={{ marginTop: "6px", color: "#656b75", fontSize: "11px" }}>
+              Try a filename like `main`, `.py`, or `sql`.
+            </div>
+          </div>
+        ) : null}
+
+        {visibleFiles.map((file) => (
           <FileItem
             key={file.name}
             file={file}
@@ -684,6 +756,15 @@ function FileGlyph({ meta }) {
   );
 }
 
+function SearchGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="6.75" cy="6.75" r="3.75" stroke="#7b8693" strokeWidth="1.2" />
+      <path d="m9.75 9.75 3 3" stroke="#7b8693" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function normalizeFileName(value) {
   const trimmed = String(value ?? "").trim();
   if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) {
@@ -759,6 +840,17 @@ const inlineInputStyle = {
   outline: "none",
   boxSizing: "border-box",
   borderRadius: "4px",
+};
+
+const searchInputStyle = {
+  flex: 1,
+  minWidth: 0,
+  border: "none",
+  background: "transparent",
+  color: "#d4d4d4",
+  fontSize: "12px",
+  outline: "none",
+  padding: 0,
 };
 
 const workspaceMenuStyle = {

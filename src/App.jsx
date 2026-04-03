@@ -22,7 +22,10 @@ const ACTIVE_WORKSPACE_STORAGE_KEY = "wasmforge:active-workspace";
 const RECOVERY_STORAGE_KEY_PREFIX = "wasmforge:pending-workspace-writes";
 const MOBILE_LAYOUT_BREAKPOINT = 960;
 const ACTIVITY_BAR_WIDTH = 40;
-const SIDEBAR_WIDTH = 200;
+const DEFAULT_SIDEBAR_WIDTH = 260;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 420;
+const SIDEBAR_RESIZE_HANDLE_WIDTH = 6;
 const TOP_HEADER_HEIGHT = 40;
 const STATUS_BAR_HEIGHT = 22;
 const BOTTOM_TABBAR_HEIGHT = 35;
@@ -245,12 +248,16 @@ export default function App() {
   const [activeWorkspace, setActiveWorkspace] = useState(readPersistedActiveWorkspace);
   const [workspaceBootstrapped, setWorkspaceBootstrapped] = useState(false);
   const [editorPaneHeight, setEditorPaneHeight] = useState(null);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [sidebarMode, setSidebarMode] = useState("explorer");
+  const [fileSearchQuery, setFileSearchQuery] = useState("");
   const [bottomPanelMode, setBottomPanelMode] = useState("terminal");
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === "undefined" ? 1280 : window.innerWidth,
   );
   const [mobilePane, setMobilePane] = useState("editor");
   const terminalRef = useRef(null);
+  const desktopLayoutRef = useRef(null);
   const shellBodyRef = useRef(null);
   const resizeStateRef = useRef(null);
   const terminalResizeRafRef = useRef(null);
@@ -317,8 +324,31 @@ export default function App() {
   useEffect(() => {
     const handlePointerMove = (event) => {
       const session = resizeStateRef.current;
+      if (!session) {
+        return;
+      }
+
+      if (session.side === "sidebar") {
+        const layout = desktopLayoutRef.current;
+        if (!layout) {
+          return;
+        }
+
+        const bounds = layout.getBoundingClientRect();
+        const nextWidth = clamp(
+          event.clientX - bounds.left - ACTIVITY_BAR_WIDTH,
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, bounds.width - 320),
+        );
+
+        setSidebarWidth(nextWidth);
+        editorRef.current?.layout?.();
+        requestTerminalResize();
+        return;
+      }
+
       const container = shellBodyRef.current;
-      if (!session || !container) {
+      if (!container) {
         return;
       }
 
@@ -343,6 +373,7 @@ export default function App() {
       resizeStateRef.current = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      editorRef.current?.layout?.();
       requestTerminalResize();
     };
 
@@ -360,13 +391,24 @@ export default function App() {
   useEffect(() => {
     const handleWindowResize = () => {
       const height = shellBodyRef.current?.getBoundingClientRect().height ?? 0;
+      const layoutWidth = desktopLayoutRef.current?.getBoundingClientRect().width ?? 0;
       if (!height) {
-        return;
+        editorRef.current?.layout?.();
+      } else {
+        setEditorPaneHeight((prev) => (
+          prev === null ? prev : clampEditorPaneHeight(prev, height)
+        ));
       }
 
-      setEditorPaneHeight((prev) => (
-        prev === null ? prev : clampEditorPaneHeight(prev, height)
-      ));
+      if (layoutWidth) {
+        setSidebarWidth((prev) => clamp(
+          prev,
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, layoutWidth - 320),
+        ));
+      }
+
+      editorRef.current?.layout?.();
       requestTerminalResize();
     };
 
@@ -391,7 +433,7 @@ export default function App() {
   const startResize = useCallback((side) => (event) => {
     event.preventDefault();
     resizeStateRef.current = { side };
-    document.body.style.cursor = "row-resize";
+    document.body.style.cursor = side === "sidebar" ? "col-resize" : "row-resize";
     document.body.style.userSelect = "none";
   }, []);
 
@@ -1384,6 +1426,27 @@ export default function App() {
     };
   }, [activeFile, isMobileLayout, mobilePane]);
 
+  useEffect(() => {
+    if (isMobileLayout) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      editorRef.current?.layout?.();
+      requestTerminalResize();
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, [isMobileLayout, requestTerminalResize, sidebarWidth]);
+
+  useEffect(() => {
+    if (sidebarMode !== "search" && fileSearchQuery) {
+      setFileSearchQuery("");
+    }
+  }, [fileSearchQuery, sidebarMode]);
+
   const fileTabs = openFiles.filter((filename) => files.some((file) => file.name === filename));
   const terminalVisible = bottomPanelMode === "terminal" && (!isMobileLayout || mobilePane === "output");
   const outputVisible = bottomPanelMode === "output" && (!isMobileLayout || mobilePane === "output");
@@ -1392,13 +1455,16 @@ export default function App() {
       ? { flex: `${DEFAULT_EDITOR_RATIO} 1 0%` }
       : { flex: `0 0 ${editorPaneHeight}px` };
   const runButtonDisabled = isAnyRuntimeBusy || activeRuntime === "unknown" || !activeRuntimeReady;
-  const desktopNavWidth = ACTIVITY_BAR_WIDTH + SIDEBAR_WIDTH;
+  const desktopNavWidth = ACTIVITY_BAR_WIDTH + sidebarWidth;
 
   const filesPanel = (
     <FileTree
       files={files}
       activeFile={activeFile}
       activeWorkspace={activeWorkspace}
+      mode={sidebarMode}
+      searchQuery={fileSearchQuery}
+      onSearchQueryChange={setFileSearchQuery}
       workspaces={workspaces}
       onSelectWorkspace={(workspaceName) => {
         void handleWorkspaceSelect(workspaceName);
@@ -1419,8 +1485,8 @@ export default function App() {
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
-        background: "#1e1e1e",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, rgba(255,255,255,0) 34%), #14181e",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02), 0 20px 48px rgba(0,0,0,0.18)",
       }}
     >
       {files.length === 0 ? (
@@ -1437,7 +1503,7 @@ export default function App() {
                 placeItems: "center",
                 color: "#858585",
                 fontSize: "13px",
-                background: "#1e1e1e",
+                background: "#14181e",
               }}
             >
               Loading editor...
@@ -1540,7 +1606,7 @@ export default function App() {
         minHeight: "100dvh",
         height: "100dvh",
         overflow: "hidden",
-        background: "#101215",
+        background: "radial-gradient(circle at top left, rgba(0,122,204,0.18), transparent 22%), radial-gradient(circle at top right, rgba(74,163,100,0.08), transparent 18%), #0c1015",
         color: "#d4d4d4",
         fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
         display: "flex",
@@ -1555,7 +1621,7 @@ export default function App() {
           alignItems: "stretch",
           background: "linear-gradient(180deg, #232830 0%, #1c2027 100%)",
           borderBottom: "1px solid rgba(255,255,255,0.04)",
-          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.02)",
+          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.02), 0 12px 32px rgba(0,0,0,0.18)",
         }}
       >
         <div
@@ -1568,6 +1634,7 @@ export default function App() {
             padding: "0 12px",
             flexShrink: 0,
             borderRight: isMobileLayout ? "none" : "1px solid rgba(255,255,255,0.04)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)",
           }}
         >
           <LogoMark />
@@ -1627,6 +1694,7 @@ export default function App() {
             padding: "0 12px",
             flexShrink: 0,
             borderLeft: "1px solid rgba(255,255,255,0.04)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.005) 100%)",
           }}
         >
           <button type="button" onClick={handleRun} disabled={runButtonDisabled} style={runButtonStyle(runButtonDisabled)}>
@@ -1667,39 +1735,42 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        <div ref={desktopLayoutRef} style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
           <div
             style={{
               width: `${ACTIVITY_BAR_WIDTH}px`,
-              background: "linear-gradient(180deg, #171b21 0%, #14181d 100%)",
+              background: "linear-gradient(180deg, #141922 0%, #10151d 100%)",
               borderRight: "1px solid rgba(255,255,255,0.04)",
               display: "flex",
               flexDirection: "column",
               alignItems: "stretch",
               paddingTop: "10px",
               flexShrink: 0,
+              boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02)",
             }}
           >
-            <ActivityButton active title="Explorer">
+            <ActivityButton active={sidebarMode === "explorer"} title="Explorer" onClick={() => setSidebarMode("explorer")}>
               <ExplorerIcon />
             </ActivityButton>
-            <ActivityButton title="Search" disabled>
+            <ActivityButton active={sidebarMode === "search"} title="Search" onClick={() => setSidebarMode("search")}>
               <SearchIcon />
             </ActivityButton>
           </div>
 
           <div
             style={{
-              width: `${SIDEBAR_WIDTH}px`,
-              background: "linear-gradient(180deg, #1a1e24 0%, #171a1f 100%)",
+              width: `${sidebarWidth}px`,
+              background: "linear-gradient(180deg, rgba(22,27,36,0.98) 0%, rgba(17,21,28,1) 100%)",
               borderRight: "1px solid rgba(255,255,255,0.04)",
               minWidth: 0,
               flexShrink: 0,
-              boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02)",
+              boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02), 24px 0 48px rgba(0,0,0,0.22)",
             }}
           >
             {filesPanel}
           </div>
+
+          <VerticalResizeHandle onPointerDown={startResize("sidebar")} />
 
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div ref={shellBodyRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -1779,23 +1850,51 @@ function HorizontalResizeHandle({ onPointerDown }) {
   );
 }
 
-function ActivityButton({ active = false, children, disabled = false, title }) {
+function VerticalResizeHandle({ onPointerDown }) {
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      style={{
+        width: `${SIDEBAR_RESIZE_HANDLE_WIDTH}px`,
+        flexShrink: 0,
+        cursor: "col-resize",
+        background: "#10151d",
+        position: "relative",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: "50%",
+          width: "1px",
+          transform: "translateX(-50%)",
+          background: "rgba(255,255,255,0.04)",
+        }}
+      />
+    </div>
+  );
+}
+
+function ActivityButton({ active = false, children, disabled = false, title, onClick }) {
   return (
     <button
       type="button"
       title={title}
       disabled={disabled}
+      onClick={onClick}
       style={{
         height: "40px",
         border: "none",
         borderLeft: `2px solid ${active ? "#007acc" : "transparent"}`,
-        background: active ? "rgba(255,255,255,0.035)" : "transparent",
+        background: active ? "linear-gradient(180deg, rgba(0,122,204,0.16) 0%, rgba(255,255,255,0.03) 100%)" : "transparent",
         color: active ? "#ffffff" : "#858585",
         display: "grid",
         placeItems: "center",
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.8 : 1,
-        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.02)" : "none",
+        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.03)" : "none",
       }}
     >
       {children}

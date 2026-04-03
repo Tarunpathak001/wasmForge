@@ -1,6 +1,9 @@
 node_modules/
 dist/
 dev-dist/
+artifacts/
+dev.log
+dev.err.log
 .env
 .env.local
 *.local

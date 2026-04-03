@@ -1,282 +1,446 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from "react";
 
 function FileTree({
   files,
   activeFile,
+  activeWorkspace,
+  workspaces = [],
+  onSelectWorkspace,
+  onCreateWorkspace,
   onFileSelect,
-  onNewFile,
   onCreateFile,
   onRenameFile,
   onDeleteFile,
   disabled = false,
 }) {
-  const [isCreating, setIsCreating] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [editingName, setEditingName] = useState(null)
-  const [editingValue, setEditingValue] = useState('')
-  const [contextMenu, setContextMenu] = useState(null)
-  const createInputRef = useRef(null)
-  const editInputRef = useRef(null)
-  const menuRef = useRef(null)
+  const [isCreating, setIsCreating] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [editingName, setEditingName] = useState(null);
+  const [editingValue, setEditingValue] = useState("");
+  const [contextMenu, setContextMenu] = useState(null);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceDraftName, setWorkspaceDraftName] = useState("");
+  const [workspaceFeedback, setWorkspaceFeedback] = useState("");
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const createInputRef = useRef(null);
+  const editInputRef = useRef(null);
+  const menuRef = useRef(null);
+  const workspaceMenuRef = useRef(null);
+  const workspaceButtonRef = useRef(null);
 
-  const canCreateInline = Boolean(onCreateFile || onNewFile)
-  const canRename = Boolean(onRenameFile)
-  const canDelete = Boolean(onDeleteFile)
+  const orderedFiles = useMemo(
+    () => [...files].sort((left, right) => left.name.localeCompare(right.name)),
+    [files],
+  );
+  const sortedWorkspaces = useMemo(
+    () => [...workspaces].sort((left, right) => left.localeCompare(right)),
+    [workspaces],
+  );
 
   useEffect(() => {
     if (isCreating) {
-      createInputRef.current?.focus()
-      createInputRef.current?.select?.()
+      createInputRef.current?.focus();
+      createInputRef.current?.select?.();
     }
-  }, [isCreating])
+  }, [isCreating]);
 
   useEffect(() => {
     if (editingName) {
-      editInputRef.current?.focus()
-      editInputRef.current?.select?.()
+      editInputRef.current?.focus();
+      editInputRef.current?.select?.();
     }
-  }, [editingName])
+  }, [editingName]);
 
   useEffect(() => {
-    if (!contextMenu) {
-      return undefined
+    if (!contextMenu && !workspaceMenuOpen) {
+      return undefined;
     }
 
-    const closeMenu = () => setContextMenu(null)
+    const closeMenus = (event) => {
+      if (workspaceMenuOpen) {
+        if (workspaceMenuRef.current?.contains(event.target)) {
+          return;
+        }
+        if (workspaceButtonRef.current?.contains(event.target)) {
+          return;
+        }
+      }
+
+      if (contextMenu && menuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      setContextMenu(null);
+      setWorkspaceMenuOpen(false);
+    };
+
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        closeMenu()
+      if (event.key === "Escape") {
+        setContextMenu(null);
+        setWorkspaceMenuOpen(false);
       }
-    }
+    };
 
-    const handlePointerDown = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        closeMenu()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('scroll', closeMenu, true)
-    window.addEventListener('resize', closeMenu)
+    window.addEventListener("pointerdown", closeMenus);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeMenus);
+    window.addEventListener("scroll", closeMenus, true);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('scroll', closeMenu, true)
-      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener("pointerdown", closeMenus);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeMenus);
+      window.removeEventListener("scroll", closeMenus, true);
+    };
+  }, [contextMenu, workspaceMenuOpen]);
+
+  useEffect(() => {
+    if (disabled) {
+      setContextMenu(null);
+      setWorkspaceMenuOpen(false);
     }
-  }, [contextMenu])
+  }, [disabled]);
 
   useEffect(() => {
     if (editingName && !files.some((file) => file.name === editingName)) {
-      setEditingName(null)
-      setEditingValue('')
+      setEditingName(null);
+      setEditingValue("");
     }
-  }, [editingName, files])
+  }, [editingName, files]);
 
-  const orderedFiles = useMemo(() => {
-    return [...files].sort((left, right) => left.name.localeCompare(right.name))
-  }, [files])
+  const openFileMenu = (filename, x, y) => {
+    setWorkspaceMenuOpen(false);
+    setContextMenu({ file: filename, x, y });
+  };
 
-  const startCreate = () => {
-    if (disabled || !canCreateInline) {
-      return
-    }
-
-    setContextMenu(null)
-    setEditingName(null)
-    setCreateName('')
-    setIsCreating(true)
-  }
-
-  const cancelCreate = () => {
-    setIsCreating(false)
-    setCreateName('')
-  }
-
-  const submitCreate = async () => {
-    if (disabled) {
-      return
-    }
-
-    const normalized = normalizeFileName(createName)
+  const handleCreateFile = async () => {
+    const normalized = normalizeFileName(createName);
     if (!normalized) {
-      cancelCreate()
-      return
+      setIsCreating(false);
+      setCreateName("");
+      return;
     }
 
     if (files.some((file) => file.name === normalized)) {
-      return
+      return;
     }
 
     try {
-      if (onCreateFile) {
-        await onCreateFile(normalized)
-      } else if (onNewFile) {
-        onNewFile()
-      }
-      cancelCreate()
+      await onCreateFile?.(normalized);
+      setIsCreating(false);
+      setCreateName("");
     } catch {
-      // Parent owns the side effects; keep the row open on failure.
+      // Parent owns error messaging.
     }
-  }
+  };
 
-  const beginRename = (filename) => {
-    if (disabled || !canRename) {
-      return
-    }
-
-    setContextMenu(null)
-    setIsCreating(false)
-    setCreateName('')
-    setEditingName(filename)
-    setEditingValue(filename)
-  }
-
-  const cancelRename = () => {
-    setEditingName(null)
-    setEditingValue('')
-  }
-
-  const submitRename = async () => {
-    if (!editingName || disabled || !canRename) {
-      return
-    }
-
-    const normalized = normalizeFileName(editingValue)
-    if (!normalized || normalized === editingName) {
-      cancelRename()
-      return
+  const handleRenameSubmit = async () => {
+    const normalized = normalizeFileName(editingValue);
+    if (!editingName || !normalized || normalized === editingName) {
+      setEditingName(null);
+      setEditingValue("");
+      return;
     }
 
     if (files.some((file) => file.name === normalized && file.name !== editingName)) {
-      return
+      return;
     }
 
     try {
-      await onRenameFile(editingName, normalized)
-      cancelRename()
+      await onRenameFile?.(editingName, normalized);
+      setEditingName(null);
+      setEditingValue("");
     } catch {
-      // Parent owns the side effects; keep the row open on failure.
+      // Parent owns error messaging.
     }
-  }
+  };
 
-  const handleDelete = async (filename) => {
-    if (disabled || !canDelete) {
-      return
+  const handleWorkspaceCreate = async () => {
+    const normalized = normalizeWorkspaceName(workspaceDraftName);
+    if (!normalized || isCreatingWorkspace) {
+      return;
     }
 
-    setContextMenu(null)
+    setIsCreatingWorkspace(true);
+    setWorkspaceFeedback("");
 
     try {
-      await onDeleteFile(filename)
-    } catch {
-      // Parent owns the side effects.
+      await onCreateWorkspace?.(normalized);
+      setWorkspaceDraftName("");
+      setWorkspaceMenuOpen(false);
+    } catch (error) {
+      setWorkspaceFeedback(error?.message || String(error));
+    } finally {
+      setIsCreatingWorkspace(false);
     }
-  }
+  };
 
   return (
     <div
       style={{
-        width: '100%',
-        height: '100%',
-        background: '#0d141c',
-        borderRight: '1px solid #2a323b',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
+        width: "100%",
+        height: "100%",
+        background: "linear-gradient(180deg, #262628 0%, #252526 100%)",
+        color: "#d4d4d4",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       <div
         style={{
-          padding: '10px 12px',
-          borderBottom: '1px solid #30363d',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px',
-          background: '#101720',
+          padding: "8px 12px 10px",
+          borderBottom: "1px solid rgba(30, 30, 30, 0.92)",
+          background: "linear-gradient(180deg, rgba(39,39,41,0.98) 0%, rgba(37,37,38,1) 100%)",
+          flexShrink: 0,
         }}
       >
-        <div>
-          <div
-            style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              color: '#8b949e',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-            }}
-          >
-            Files
-          </div>
-          <div style={{ color: '#6e7681', fontSize: '11px', marginTop: '3px' }}>
-            {orderedFiles.length} file{orderedFiles.length === 1 ? '' : 's'}
-          </div>
+        <div
+          style={{
+            color: "#bbbbbb",
+            fontSize: "11px",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            fontWeight: 700,
+          }}
+        >
+          Explorer
         </div>
 
-        <button
-          onClick={disabled ? undefined : startCreate}
-          title={
-            disabled
-              ? 'Finish or stop the active session before creating files'
-              : 'Create file'
-          }
-          disabled={disabled || !canCreateInline}
-          style={iconButtonStyle(disabled || !canCreateInline)}
+        <div
+          style={{
+            marginTop: "10px",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "8px",
+          }}
         >
-          +
-        </button>
+          <button
+            ref={workspaceButtonRef}
+            type="button"
+            aria-label="Workspace switcher"
+            title={activeWorkspace}
+            disabled={disabled}
+            onClick={() => {
+              if (disabled) {
+                return;
+              }
+              setContextMenu(null);
+              setWorkspaceFeedback("");
+              setWorkspaceMenuOpen((prev) => !prev);
+            }}
+            style={workspaceToggleButtonStyle(disabled)}
+          >
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "999px",
+                background: "#007acc",
+                boxShadow: "0 0 0 3px rgba(0,122,204,0.14)",
+                flexShrink: 0,
+                marginTop: "5px",
+              }}
+            />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span
+                style={{
+                  display: "block",
+                  color: "#d4d4d4",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {activeWorkspace}
+              </span>
+              <span
+                style={{
+                  display: "block",
+                  marginTop: "3px",
+                  color: "#858585",
+                  fontSize: "11px",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {orderedFiles.length} file{orderedFiles.length === 1 ? "" : "s"} · {sortedWorkspaces.length} workspace{sortedWorkspaces.length === 1 ? "" : "s"}
+              </span>
+            </span>
+            <span
+              style={{
+                color: "#858585",
+                fontSize: "10px",
+                transform: workspaceMenuOpen ? "rotate(180deg)" : "none",
+                transition: "transform 120ms ease",
+              }}
+            >
+              ▾
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (disabled) {
+                return;
+              }
+              setWorkspaceMenuOpen(false);
+              setContextMenu(null);
+              setEditingName(null);
+              setCreateName("");
+              setIsCreating(true);
+            }}
+            disabled={disabled}
+            aria-label="Create file"
+            title="Create file"
+            style={headerIconButtonStyle(disabled)}
+          >
+            <span style={{ fontSize: "16px", lineHeight: 1, transform: "translateY(-1px)" }}>+</span>
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: "12px",
+            color: "#858585",
+            fontSize: "10px",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            fontWeight: 700,
+          }}
+        >
+          Files
+        </div>
+
+        {workspaceMenuOpen ? (
+          <div ref={workspaceMenuRef} style={workspaceMenuStyle}>
+            <div style={menuSectionLabelStyle}>Workspaces</div>
+
+            <div style={{ display: "grid", gap: "4px", maxHeight: "164px", overflowY: "auto", paddingRight: "2px" }}>
+              {sortedWorkspaces.map((workspaceName) => {
+                const isActive = workspaceName === activeWorkspace;
+                return (
+                  <button
+                    key={workspaceName}
+                    type="button"
+                    onClick={() => {
+                      if (!isActive) {
+                        onSelectWorkspace?.(workspaceName);
+                      }
+                      setWorkspaceMenuOpen(false);
+                    }}
+                    style={workspaceMenuItemStyle(isActive)}
+                  >
+                    <span
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        borderRadius: "999px",
+                        background: isActive ? "#007acc" : "#5e5e62",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {workspaceName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: "10px", paddingTop: "10px" }}>
+              <div style={menuSectionLabelStyle}>New Workspace</div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <input
+                  value={workspaceDraftName}
+                  onChange={(event) => {
+                    setWorkspaceDraftName(event.target.value);
+                    if (workspaceFeedback) {
+                      setWorkspaceFeedback("");
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      void handleWorkspaceCreate();
+                    }
+                  }}
+                  placeholder="sql-practice"
+                  style={workspaceInputStyle}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleWorkspaceCreate();
+                  }}
+                  disabled={isCreatingWorkspace || !normalizeWorkspaceName(workspaceDraftName)}
+                  style={workspaceCreateButtonStyle(isCreatingWorkspace || !normalizeWorkspaceName(workspaceDraftName))}
+                >
+                  Add
+                </button>
+              </div>
+              {workspaceFeedback ? (
+                <div style={{ marginTop: "8px", color: "#f48771", fontSize: "11px", lineHeight: 1.4 }}>
+                  {workspaceFeedback}
+                </div>
+              ) : (
+                <div style={{ marginTop: "8px", color: "#858585", fontSize: "11px", lineHeight: 1.4 }}>
+                  Keep names short. No slashes.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0 10px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 0 10px" }}>
         {isCreating ? (
-          <InlineRow
-            isActive
-            tone="#9db9da"
-            leftSlot={<FileGlyph filename={createName || 'new.file'} />}
-          >
+          <InlineRow meta={getFileMeta(createName || "new.py")}>
             <input
               ref={createInputRef}
               value={createName}
               onChange={(event) => setCreateName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void submitCreate()
+                if (event.key === "Enter") {
+                  void handleCreateFile();
                 }
-                if (event.key === 'Escape') {
-                  cancelCreate()
+                if (event.key === "Escape") {
+                  setIsCreating(false);
+                  setCreateName("");
                 }
               }}
               onBlur={() => {
                 if (createName.trim()) {
-                  void submitCreate()
+                  void handleCreateFile();
                 } else {
-                  cancelCreate()
+                  setIsCreating(false);
+                  setCreateName("");
                 }
               }}
               placeholder="new-file.py"
               spellCheck={false}
-              disabled={disabled}
               style={inlineInputStyle}
             />
           </InlineRow>
         ) : null}
 
         {orderedFiles.length === 0 && !isCreating ? (
-          <div
-            style={{
-              padding: '20px 14px',
-              color: '#6e7681',
-              fontSize: '12px',
-              textAlign: 'center',
-              lineHeight: 1.5,
-            }}
-          >
-            No files in this workspace.
-            <br />
-            Create one to begin.
+          <div style={{ padding: "18px 12px", color: "#858585", fontSize: "12px", lineHeight: 1.55 }}>
+            No files in this workspace yet.
+            <div style={{ marginTop: "6px", color: "#6f6f73", fontSize: "11px" }}>
+              Use the plus button to create a file.
+            </div>
           </div>
         ) : null}
 
@@ -286,30 +450,42 @@ function FileTree({
             file={file}
             isActive={file.name === activeFile}
             disabled={disabled}
-            canRename={canRename}
-            canDelete={canDelete}
             isEditing={editingName === file.name}
-            editingValue={editingName === file.name ? editingValue : ''}
+            editingValue={editingName === file.name ? editingValue : ""}
             onEditValueChange={setEditingValue}
-            onRenameStart={() => beginRename(file.name)}
-            onRenameCancel={cancelRename}
-            onRenameSubmit={() => void submitRename()}
-            onDelete={() => void handleDelete(file.name)}
-            onSelect={() => onFileSelect(file.name)}
+            onRenameStart={() => {
+              if (disabled) {
+                return;
+              }
+              setContextMenu(null);
+              setEditingName(file.name);
+              setEditingValue(file.name);
+            }}
+            onRenameCancel={() => {
+              setEditingName(null);
+              setEditingValue("");
+            }}
+            onRenameSubmit={() => void handleRenameSubmit()}
+            onDelete={() => void onDeleteFile?.(file.name)}
+            onSelect={() => {
+              if (!disabled) {
+                onFileSelect(file.name);
+              }
+            }}
             onContextRequest={(event) => {
               if (disabled) {
-                return
+                return;
               }
-
-              event.preventDefault()
-              setIsCreating(false)
-              setEditingName(null)
-              setEditingValue('')
-              setContextMenu({
-                file: file.name,
-                x: event.clientX,
-                y: event.clientY,
-              })
+              event.preventDefault();
+              openFileMenu(file.name, event.clientX, event.clientY);
+            }}
+            onMenuOpen={(event) => {
+              if (disabled) {
+                return;
+              }
+              event.stopPropagation();
+              const bounds = event.currentTarget.getBoundingClientRect();
+              openFileMenu(file.name, bounds.right - 12, bounds.bottom + 4);
             }}
             editInputRef={editingName === file.name ? editInputRef : null}
           />
@@ -317,96 +493,76 @@ function FileTree({
       </div>
 
       {contextMenu ? (
-        <div
-          ref={menuRef}
-          style={getContextMenuStyle(contextMenu)}
-        >
+        <div ref={menuRef} style={getContextMenuStyle(contextMenu)}>
           <MenuItem
             label="Open"
-            hint="Enter"
             onClick={() => {
-              onFileSelect(contextMenu.file)
-              setContextMenu(null)
+              onFileSelect(contextMenu.file);
+              setContextMenu(null);
             }}
           />
           <MenuItem
             label="Rename"
-            hint="Double-click"
-            disabled={!canRename}
             onClick={() => {
-              beginRename(contextMenu.file)
-              setContextMenu(null)
+              setEditingName(contextMenu.file);
+              setEditingValue(contextMenu.file);
+              setContextMenu(null);
             }}
           />
           <MenuItem
             label="Delete"
-            hint="Del"
             danger
-            disabled={!canDelete}
-            onClick={() => void handleDelete(contextMenu.file)}
+            onClick={() => {
+              void onDeleteFile?.(contextMenu.file);
+              setContextMenu(null);
+            }}
           />
         </div>
       ) : null}
     </div>
-  )
+  );
 }
 
 function FileItem({
   file,
   isActive,
-  disabled = false,
-  canRename = false,
-  canDelete = false,
-  isEditing = false,
-  editingValue = '',
+  disabled,
+  isEditing,
+  editingValue,
   onEditValueChange,
   onRenameStart,
   onRenameCancel,
   onRenameSubmit,
-  onDelete,
   onSelect,
   onContextRequest,
+  onMenuOpen,
   editInputRef,
 }) {
-  const meta = getFileMeta(file.name)
+  const [isHovered, setIsHovered] = useState(false);
+  const meta = getFileMeta(file.name);
 
   return (
     <div
-      data-file-row
-      onClick={disabled ? undefined : onSelect}
-      onDoubleClick={disabled ? undefined : onRenameStart}
+      onClick={onSelect}
+      onDoubleClick={onRenameStart}
       onContextMenu={onContextRequest}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
-        margin: '0 8px 4px',
-        padding: '8px 10px',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        fontSize: '13px',
-        color: disabled ? '#6e7681' : isActive ? '#f0f6fc' : '#c9d1d9',
-        background: isActive
-          ? 'rgba(95, 112, 140, 0.14)'
-          : 'transparent',
-        border: `1px solid ${isActive ? 'rgba(118, 132, 153, 0.24)' : 'transparent'}`,
-        borderRadius: '12px',
-        transition: 'background 0.12s ease, border-color 0.12s ease',
-        opacity: disabled ? 0.72 : 1,
-      }}
-      onMouseEnter={(event) => {
-        if (!isActive && !disabled) {
-          event.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'
-          event.currentTarget.style.borderColor = 'rgba(139, 148, 158, 0.1)'
-        }
-      }}
-      onMouseLeave={(event) => {
-        if (!isActive) {
-          event.currentTarget.style.background = 'transparent'
-          event.currentTarget.style.borderColor = 'transparent'
-        }
+        height: "28px",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "0 8px 0 10px",
+        margin: "0 6px",
+        background: isActive ? "#37373d" : isHovered ? "#2a2d2e" : "transparent",
+        color: isActive ? "#ffffff" : "#d4d4d4",
+        cursor: disabled ? "default" : "pointer",
+        borderRadius: "4px",
+        boxShadow: isActive ? "inset 2px 0 0 #007acc, inset 0 0 0 1px rgba(255,255,255,0.04)" : "none",
       }}
     >
-      <FileGlyph filename={file.name} />
+      <FileGlyph meta={meta} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
         {isEditing ? (
@@ -415,315 +571,297 @@ function FileItem({
             value={editingValue}
             onChange={(event) => onEditValueChange(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                void onRenameSubmit()
+              if (event.key === "Enter") {
+                void onRenameSubmit();
               }
-              if (event.key === 'Escape') {
-                onRenameCancel()
+              if (event.key === "Escape") {
+                onRenameCancel();
               }
             }}
             onBlur={() => void onRenameSubmit()}
             spellCheck={false}
-            disabled={disabled}
             style={inlineInputStyle}
           />
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontWeight: isActive ? 700 : 500,
-              }}
-              title={file.name}
-            >
-              {file.name}
-            </div>
+          <div
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontFamily: '"Cascadia Code", Consolas, monospace',
+              fontSize: "12px",
+              lineHeight: 1,
+            }}
+            title={file.name}
+          >
+            {file.name}
           </div>
         )}
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          opacity: canRename || canDelete ? 1 : 0.35,
-        }}
+      <button
+        type="button"
+        onClick={onMenuOpen}
+        onDoubleClick={(event) => event.stopPropagation()}
+        style={fileActionButtonStyle(isHovered || isActive)}
+        aria-label={`More actions for ${file.name}`}
+        title="More actions"
       >
-        <ActionButton
-          label="Rename"
-          shortcut="R"
-          disabled={disabled || !canRename || isEditing}
-          onClick={onRenameStart}
-        />
-        <ActionButton
-          label="Delete"
-          shortcut="X"
-          danger
-          disabled={disabled || !canDelete}
-          onClick={onDelete}
-        />
-      </div>
+        ⋯
+      </button>
     </div>
-  )
+  );
 }
 
-function FileGlyph({ filename }) {
-  const meta = getFileMeta(filename)
+function MenuItem({ label, onClick, danger = false }) {
+  const [hovered, setHovered] = useState(false);
 
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        width: '28px',
-        height: '28px',
-        position: 'relative',
-        flexShrink: 0,
-        borderRadius: '8px',
-        background: '#11161d',
-        border: `1px solid ${meta.border}`,
-        display: 'grid',
-        placeItems: 'center',
-        color: meta.color,
-        fontSize: meta.glyphFontSize,
-        fontWeight: 800,
-        letterSpacing: '0.04em',
-      }}
-    >
-      <span style={{ position: 'relative', zIndex: 1 }}>{meta.glyph}</span>
-    </div>
-  )
-}
-
-function ActionButton({ label, shortcut, onClick, disabled = false, danger = false }) {
   return (
     <button
       type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      title={label}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        height: '24px',
-        minWidth: '24px',
-        padding: '0 8px',
-        borderRadius: '8px',
-        border: `1px solid ${danger ? 'rgba(248, 81, 73, 0.35)' : 'rgba(139, 148, 158, 0.2)'}`,
-        background: danger ? 'rgba(248, 81, 73, 0.06)' : '#11161d',
-        color: disabled ? '#6e7681' : danger ? '#ff7b72' : '#c9d1d9',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontSize: '11px',
+        width: "100%",
+        border: "none",
+        background: hovered ? "rgba(255,255,255,0.04)" : "transparent",
+        color: danger ? "#f48771" : "#d4d4d4",
+        textAlign: "left",
+        padding: "8px 10px",
+        fontSize: "12px",
+        cursor: "pointer",
+        transition: "background 120ms ease",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function InlineRow({ meta, children }) {
+  return (
+    <div
+      style={{
+        height: "28px",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "0 8px 0 10px",
+        margin: "0 6px",
+        background: "#2a2d2e",
+        borderRadius: "4px",
+      }}
+    >
+      <FileGlyph meta={meta} />
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+function FileGlyph({ meta }) {
+  return (
+    <span
+      style={{
+        width: "18px",
+        height: "18px",
+        borderRadius: "5px",
+        display: "grid",
+        placeItems: "center",
+        background: meta.surface,
+        color: meta.accent,
+        fontSize: meta.label.length > 2 ? "7px" : "9px",
         fontWeight: 700,
-        letterSpacing: '0.02em',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
+        letterSpacing: "0.03em",
+        flexShrink: 0,
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
       }}
+      aria-hidden="true"
     >
-      <span>{label}</span>
-      <span style={{ opacity: 0.72 }}>{shortcut}</span>
-    </button>
-  )
-}
-
-function MenuItem({ label, hint, onClick, danger = false, disabled = false }) {
-  return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      style={{
-        width: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px',
-        padding: '9px 10px',
-        border: 'none',
-        borderRadius: '8px',
-        background: 'transparent',
-        color: disabled ? '#6e7681' : danger ? '#ff7b72' : '#c9d1d9',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        textAlign: 'left',
-        fontSize: '12px',
-        fontWeight: 600,
-      }}
-      onMouseEnter={(event) => {
-        if (!disabled) {
-          event.currentTarget.style.background = danger ? 'rgba(248, 81, 73, 0.08)' : 'rgba(255, 255, 255, 0.04)'
-        }
-      }}
-      onMouseLeave={(event) => {
-        event.currentTarget.style.background = 'transparent'
-      }}
-    >
-      <span>{label}</span>
-      <span style={{ color: '#8b949e', fontSize: '10px', fontWeight: 700 }}>{hint}</span>
-    </button>
-  )
-}
-
-function InlineRow({ children, leftSlot, tone = '#9db9da', isActive = false }) {
-  return (
-    <div
-      style={{
-        margin: '0 8px 4px',
-        padding: '8px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        borderRadius: '12px',
-        border: `1px solid ${isActive ? tone : 'rgba(95, 112, 140, 0.2)'}`,
-        background: 'rgba(95, 112, 140, 0.08)',
-      }}
-    >
-      {leftSlot}
-      <div style={{ flex: 1 }}>{children}</div>
-    </div>
-  )
-}
-
-function iconButtonStyle(disabled = false) {
-  return {
-    width: '28px',
-    height: '28px',
-    borderRadius: '8px',
-    border: '1px solid rgba(139, 148, 158, 0.18)',
-    background: '#11161d',
-    color: disabled ? '#6e7681' : '#c9d1d9',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: '18px',
-    lineHeight: 1,
-    display: 'grid',
-    placeItems: 'center',
-  }
-}
-
-const inlineInputStyle = {
-  width: '100%',
-  border: '1px solid rgba(95, 112, 140, 0.26)',
-  borderRadius: '8px',
-  background: '#0b1118',
-  color: '#f0f6fc',
-  fontSize: '13px',
-  padding: '7px 9px',
-  outline: 'none',
-  boxSizing: 'border-box',
+      {meta.label}
+    </span>
+  );
 }
 
 function normalizeFileName(value) {
-  const trimmed = String(value ?? '').trim()
-  if (!trimmed) {
-    return ''
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) {
+    return "";
   }
+  return trimmed.replace(/^\/?workspace\//u, "");
+}
 
-  if (trimmed.includes('/') || trimmed.includes('\\')) {
-    return ''
+function normalizeWorkspaceName(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) {
+    return "";
   }
-
-  return trimmed.replace(/^\/?workspace\//u, '')
+  return trimmed;
 }
 
 function getFileMeta(filename) {
-  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const extension = filename.split(".").pop()?.toLowerCase() || "";
 
-  switch (ext) {
-    case 'py':
-      return {
-        badge: 'PY',
-        glyph: 'Py',
-        color: '#9db9da',
-        surface: '#0d2538',
-        surfaceDark: '#091a29',
-        border: '#536986',
-        badgeBackground: 'rgba(88, 166, 255, 0.12)',
-        badgeBorder: 'rgba(88, 166, 255, 0.35)',
-        glyphFontSize: '11px',
-      }
-    case 'sql':
-      return {
-        badge: 'SQL',
-        glyph: 'DB',
-        color: '#9ec7a2',
-        surface: '#0f2e1f',
-        surfaceDark: '#0b2318',
-        border: '#527258',
-        badgeBackground: 'rgba(86, 211, 100, 0.12)',
-        badgeBorder: 'rgba(86, 211, 100, 0.35)',
-        glyphFontSize: '10px',
-      }
-    case 'js':
-      return {
-        badge: 'JS',
-        glyph: 'JS',
-        color: '#d0ba83',
-        surface: '#362708',
-        surfaceDark: '#291d06',
-        border: '#7a6540',
-        badgeBackground: 'rgba(210, 153, 34, 0.12)',
-        badgeBorder: 'rgba(210, 153, 34, 0.35)',
-        glyphFontSize: '10px',
-      }
-    case 'ts':
-      return {
-        badge: 'TS',
-        glyph: 'TS',
-        color: '#aebdd8',
-        surface: '#27143f',
-        surfaceDark: '#1d1031',
-        border: '#5f6f87',
-        badgeBackground: 'rgba(188, 140, 255, 0.12)',
-        badgeBorder: 'rgba(188, 140, 255, 0.35)',
-        glyphFontSize: '10px',
-      }
-    case 'pg':
-      return {
-        badge: 'PG',
-        glyph: 'PG',
-        color: '#cfa07a',
-        surface: '#3a1e08',
-        surfaceDark: '#281406',
-        border: '#8e6a4f',
-        badgeBackground: 'rgba(240, 136, 62, 0.12)',
-        badgeBorder: 'rgba(240, 136, 62, 0.35)',
-        glyphFontSize: '10px',
-      }
+  switch (extension) {
+    case "py":
+      return { label: "PY", accent: "#4ec9b0", surface: "rgba(78, 201, 176, 0.16)" };
+    case "js":
+      return { label: "JS", accent: "#dcdcaa", surface: "rgba(220, 220, 170, 0.16)" };
+    case "ts":
+      return { label: "TS", accent: "#4fc1ff", surface: "rgba(79, 193, 255, 0.16)" };
+    case "sql":
+      return { label: "SQL", accent: "#c586c0", surface: "rgba(197, 134, 192, 0.16)" };
+    case "pg":
+      return { label: "PG", accent: "#9cdcfe", surface: "rgba(156, 220, 254, 0.16)" };
     default:
-      return {
-        badge: 'FILE',
-        glyph: '⋯',
-        color: '#8b949e',
-        surface: '#1a1f29',
-        surfaceDark: '#11151b',
-        border: '#30363d',
-        badgeBackground: 'rgba(139, 148, 158, 0.12)',
-        badgeBorder: 'rgba(139, 148, 158, 0.28)',
-        glyphFontSize: '11px',
-      }
+      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.16)" };
   }
 }
 
 function getContextMenuStyle(contextMenu) {
-  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024
-  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 768
-  const left = Math.max(8, Math.min(contextMenu.x, viewportWidth - 200))
-  const top = Math.max(8, Math.min(contextMenu.y, viewportHeight - 150))
+  const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
+  const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 768;
+  const left = Math.max(8, Math.min(contextMenu.x, viewportWidth - 176));
+  const top = Math.max(8, Math.min(contextMenu.y, viewportHeight - 120));
 
   return {
-    position: 'fixed',
+    position: "fixed",
     left: `${left}px`,
     top: `${top}px`,
-    minWidth: '180px',
-    padding: '6px',
-    border: '1px solid #2a323b',
-    borderRadius: '10px',
-    background: '#0f161f',
-    boxShadow: '0 14px 30px rgba(1, 4, 9, 0.28)',
-    zIndex: 50,
-  }
+    minWidth: "160px",
+    border: "1px solid rgba(30,30,30,0.95)",
+    background: "linear-gradient(180deg, #2c2c2e 0%, #232326 100%)",
+    boxShadow: "0 18px 34px rgba(0, 0, 0, 0.38)",
+    zIndex: 40,
+    padding: "6px 0",
+    borderRadius: "8px",
+  };
 }
 
-export default FileTree
+const menuSectionLabelStyle = {
+  color: "#bbbbbb",
+  fontSize: "10px",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  marginBottom: "8px",
+};
+
+const inlineInputStyle = {
+  width: "100%",
+  border: "1px solid #007acc",
+  background: "#1e1e1e",
+  color: "#d4d4d4",
+  fontFamily: '"Cascadia Code", Consolas, monospace',
+  fontSize: "12px",
+  padding: "4px 7px",
+  outline: "none",
+  boxSizing: "border-box",
+  borderRadius: "4px",
+};
+
+const workspaceMenuStyle = {
+  position: "absolute",
+  top: "68px",
+  left: "8px",
+  right: "8px",
+  border: "1px solid rgba(30,30,30,0.95)",
+  background: "linear-gradient(180deg, #2c2c2e 0%, #232326 100%)",
+  boxShadow: "0 18px 34px rgba(0, 0, 0, 0.38)",
+  padding: "10px",
+  zIndex: 30,
+  borderRadius: "10px",
+};
+
+const workspaceInputStyle = {
+  flex: 1,
+  minWidth: 0,
+  border: "1px solid rgba(255,255,255,0.05)",
+  background: "#1e1e1e",
+  color: "#d4d4d4",
+  fontSize: "12px",
+  padding: "6px 8px",
+  outline: "none",
+  borderRadius: "6px",
+};
+
+function workspaceCreateButtonStyle(disabled = false) {
+  return {
+    border: "none",
+    background: disabled ? "#2a2d2e" : "linear-gradient(180deg, #0f74b6 0%, #0e639c 100%)",
+    color: "#ffffff",
+    padding: "0 10px",
+    fontSize: "12px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.7 : 1,
+    borderRadius: "6px",
+    boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,0.12)",
+  };
+}
+
+function workspaceToggleButtonStyle(disabled = false) {
+  return {
+    flex: 1,
+    minWidth: 0,
+    border: "none",
+    background: "transparent",
+    color: "#d4d4d4",
+    padding: 0,
+    textAlign: "left",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "9px",
+    cursor: disabled ? "default" : "pointer",
+  };
+}
+
+function workspaceMenuItemStyle(active = false) {
+  return {
+    height: "28px",
+    border: "1px solid transparent",
+    background: active ? "#37373d" : "transparent",
+    color: active ? "#ffffff" : "#d4d4d4",
+    textAlign: "left",
+    padding: "0 8px",
+    cursor: "pointer",
+    fontSize: "12px",
+    borderRadius: "6px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  };
+}
+
+function headerIconButtonStyle(disabled = false) {
+  return {
+    width: "24px",
+    height: "24px",
+    border: "1px solid rgba(255,255,255,0.05)",
+    background: "rgba(255,255,255,0.03)",
+    color: disabled ? "#5f5f5f" : "#bbbbbb",
+    cursor: disabled ? "default" : "pointer",
+    fontSize: "16px",
+    lineHeight: 1,
+    padding: 0,
+    borderRadius: "6px",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+    flexShrink: 0,
+  };
+}
+
+function fileActionButtonStyle(visible = false) {
+  return {
+    width: "20px",
+    height: "20px",
+    border: "none",
+    background: visible ? "rgba(255,255,255,0.04)" : "transparent",
+    color: "#858585",
+    cursor: "pointer",
+    opacity: visible ? 1 : 0,
+    transition: "opacity 120ms ease, background 120ms ease",
+    flexShrink: 0,
+    borderRadius: "4px",
+  };
+}
+
+export default FileTree;

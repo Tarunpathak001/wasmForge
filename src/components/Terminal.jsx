@@ -25,6 +25,11 @@ function createEmptyInputState() {
   }
 }
 
+function hasRenderableCells(xterm) {
+  const cell = xterm?._core?._renderService?.dimensions?.css?.cell
+  return Boolean(cell?.width && cell?.height)
+}
+
 const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, ref) {
   const containerRef = useRef(null)
   const xtermRef = useRef(null)
@@ -69,12 +74,11 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
       return false
     }
 
-    const cellDimensions = xterm?._core?._renderService?.dimensions?.css?.cell
-    if (!cellDimensions?.width || !cellDimensions?.height) {
-      return false
-    }
-
     try {
+      if (!hasRenderableCells(xterm)) {
+        return false
+      }
+
       fitAddon.fit()
       emitResize()
       return true
@@ -219,6 +223,15 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
     xterm.loadAddon(fitAddon)
     xterm.open(containerRef.current)
 
+    const originalFit = fitAddon.fit.bind(fitAddon)
+    fitAddon.fit = () => {
+      if (!isContainerVisible() || !hasRenderableCells(xterm)) {
+        return
+      }
+
+      originalFit()
+    }
+
     xtermRef.current = xterm
     fitAddonRef.current = fitAddon
     lastDimensionsRef.current = { cols: xterm.cols, rows: xterm.rows }
@@ -280,11 +293,20 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
     })
 
     const handleResize = () => scheduleFit()
+    const resizeObserver =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            scheduleFit()
+          })
+        : null
+
+    resizeObserver?.observe(containerRef.current)
 
     window.addEventListener('resize', handleResize)
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      resizeObserver?.disconnect()
       if (fitRafRef.current !== null) {
         cancelAnimationFrame(fitRafRef.current)
         fitRafRef.current = null
@@ -292,6 +314,16 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
       if (fitTimeoutRef.current !== null) {
         clearTimeout(fitTimeoutRef.current)
         fitTimeoutRef.current = null
+      }
+      const viewport = xterm?._core?.viewport
+      const viewportFrame = viewport?._refreshAnimationFrame
+      if (typeof viewportFrame === 'number') {
+        window.cancelAnimationFrame(viewportFrame)
+      }
+      if (viewport) {
+        viewport._refreshAnimationFrame = null
+        viewport._innerRefresh = () => {}
+        viewport.syncScrollArea = () => {}
       }
       dataListener.dispose()
       xterm.dispose()
@@ -321,10 +353,10 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
       style={{
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(180deg, #0d1117 0%, #090d13 100%)',
-        padding: '8px',
+        background: 'linear-gradient(180deg, #181a1f 0%, #10141b 100%)',
+        padding: '10px 14px',
         boxSizing: 'border-box',
-        borderRadius: '0 0 12px 12px',
+        borderRadius: 0,
       }}
       ref={containerRef}
     />

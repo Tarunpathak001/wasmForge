@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import Terminal from "./components/Terminal.jsx";
 import FileTree from "./components/FileTree.jsx";
 import SqlResultsPanel from "./components/SqlResultsPanel.jsx";
-import WorkspaceSwitcher from "./components/WorkspaceSwitcher.jsx";
 import { usePyodideWorker } from "./hooks/usePyodideWorker.js";
 import { useIOWorker } from "./hooks/useIOWorker.js";
 import { useJsWorker } from "./hooks/useJsWorker.js";
@@ -21,11 +20,16 @@ const DEFAULT_FILENAME = "main.py";
 const DEFAULT_WORKSPACE_NAME = "python-experiments";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "wasmforge:active-workspace";
 const RECOVERY_STORAGE_KEY_PREFIX = "wasmforge:pending-workspace-writes";
-const MIN_LEFT_PANEL_WIDTH = 232;
-const MIN_RIGHT_PANEL_WIDTH = 360;
-const MIN_EDITOR_PANEL_WIDTH = 320;
-const RESIZE_HANDLE_WIDTH = 10;
 const MOBILE_LAYOUT_BREAKPOINT = 960;
+const ACTIVITY_BAR_WIDTH = 40;
+const SIDEBAR_WIDTH = 200;
+const TOP_HEADER_HEIGHT = 40;
+const STATUS_BAR_HEIGHT = 22;
+const BOTTOM_TABBAR_HEIGHT = 35;
+const EDITOR_SPLIT_HANDLE_HEIGHT = 6;
+const MIN_EDITOR_PANEL_HEIGHT = 220;
+const MIN_TERMINAL_PANEL_HEIGHT = 160;
+const DEFAULT_EDITOR_RATIO = 0.65;
 const Editor = lazy(() => import("./components/Editor.jsx"));
 
 function getLanguage(filename) {
@@ -185,39 +189,63 @@ function getRuntimePresentation(runtime) {
   }
 }
 
-function clampPanelLayout(layout, containerWidth) {
-  if (!containerWidth) {
-    return layout;
+function clampEditorPaneHeight(height, containerHeight) {
+  if (!containerHeight) {
+    return height;
   }
 
-  let left = clamp(
-    layout.left,
-    MIN_LEFT_PANEL_WIDTH,
-    containerWidth - layout.right - MIN_EDITOR_PANEL_WIDTH - RESIZE_HANDLE_WIDTH * 2,
+  return clamp(
+    height,
+    MIN_EDITOR_PANEL_HEIGHT,
+    containerHeight - MIN_TERMINAL_PANEL_HEIGHT - EDITOR_SPLIT_HANDLE_HEIGHT,
   );
-  let right = clamp(
-    layout.right,
-    MIN_RIGHT_PANEL_WIDTH,
-    containerWidth - left - MIN_EDITOR_PANEL_WIDTH - RESIZE_HANDLE_WIDTH * 2,
-  );
-  left = clamp(
-    left,
-    MIN_LEFT_PANEL_WIDTH,
-    containerWidth - right - MIN_EDITOR_PANEL_WIDTH - RESIZE_HANDLE_WIDTH * 2,
-  );
+}
 
-  return { left, right };
+function getRuntimeLanguageLabel(runtime, filename = "") {
+  switch (runtime) {
+    case "python":
+      return "Python 3.13";
+    case "javascript":
+      return getFileExtension(filename) === "ts" ? "TypeScript" : "JavaScript";
+    case "sqlite":
+      return "SQLite";
+    case "pglite":
+      return "PostgreSQL";
+    default:
+      return "Plain Text";
+  }
+}
+
+function getStatusBarTone(activeRuntime, activeStatusMessage, activeRuntimeRunning, activeHasError, activeRuntimeReady, isAwaitingInput) {
+  if (activeHasError) {
+    return "#f48771";
+  }
+  if (activeRuntime === "python" && isAwaitingInput) {
+    return "#dcdcaa";
+  }
+  if (activeRuntimeRunning) {
+    return "#d7ba7d";
+  }
+  if (activeRuntimeReady) {
+    return "#3fb950";
+  }
+  if (!activeStatusMessage) {
+    return "#858585";
+  }
+  return "#858585";
 }
 
 export default function App() {
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(DEFAULT_FILENAME);
+  const [openFiles, setOpenFiles] = useState([]);
   const [status, setStatus] = useState("Loading workspace...");
   const [sqlExecution, setSqlExecution] = useState(createEmptySqlExecution);
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspace, setActiveWorkspace] = useState(readPersistedActiveWorkspace);
   const [workspaceBootstrapped, setWorkspaceBootstrapped] = useState(false);
-  const [panelLayout, setPanelLayout] = useState({ left: 276, right: 476 });
+  const [editorPaneHeight, setEditorPaneHeight] = useState(null);
+  const [bottomPanelMode, setBottomPanelMode] = useState("terminal");
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === "undefined" ? 1280 : window.innerWidth,
   );
@@ -236,6 +264,23 @@ export default function App() {
   useEffect(() => {
     activeFileRef.current = activeFile;
   }, [activeFile]);
+
+  useEffect(() => {
+    const availableFileNames = files.map((file) => file.name);
+    setOpenFiles((prev) => {
+      const next = prev.filter((filename) => availableFileNames.includes(filename));
+
+      if (activeFile && availableFileNames.includes(activeFile) && !next.includes(activeFile)) {
+        next.push(activeFile);
+      }
+
+      if (next.length === 0 && activeFile && availableFileNames.includes(activeFile)) {
+        next.push(activeFile);
+      }
+
+      return next;
+    });
+  }, [activeFile, files]);
 
   useEffect(() => {
     activeWorkspaceRef.current = activeWorkspace;
@@ -257,10 +302,6 @@ export default function App() {
 
     terminalResizeRafRef.current = requestAnimationFrame(() => {
       terminalResizeRafRef.current = null;
-      const runtime = getRuntimeKind(activeFileRef.current);
-      if (runtime === "sqlite" || runtime === "pglite") {
-        return;
-      }
       terminalRef.current?.resize?.();
     });
   }, []);
@@ -282,24 +323,14 @@ export default function App() {
       }
 
       const bounds = container.getBoundingClientRect();
-      const totalWidth = bounds.width;
-      if (!totalWidth) {
+      const totalHeight = bounds.height;
+      if (!totalHeight) {
         return;
       }
 
-      setPanelLayout((prev) => {
-        if (session.side === "left") {
-          return clampPanelLayout(
-            { ...prev, left: event.clientX - bounds.left },
-            totalWidth,
-          );
-        }
-
-        return clampPanelLayout(
-          { ...prev, right: bounds.right - event.clientX },
-          totalWidth,
-        );
-      });
+      setEditorPaneHeight(
+        clampEditorPaneHeight(event.clientY - bounds.top, totalHeight),
+      );
 
       requestTerminalResize();
     };
@@ -328,12 +359,14 @@ export default function App() {
 
   useEffect(() => {
     const handleWindowResize = () => {
-      const width = shellBodyRef.current?.getBoundingClientRect().width ?? 0;
-      if (!width) {
+      const height = shellBodyRef.current?.getBoundingClientRect().height ?? 0;
+      if (!height) {
         return;
       }
 
-      setPanelLayout((prev) => clampPanelLayout(prev, width));
+      setEditorPaneHeight((prev) => (
+        prev === null ? prev : clampEditorPaneHeight(prev, height)
+      ));
       requestTerminalResize();
     };
 
@@ -358,7 +391,7 @@ export default function App() {
   const startResize = useCallback((side) => (event) => {
     event.preventDefault();
     resizeStateRef.current = { side };
-    document.body.style.cursor = "col-resize";
+    document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
   }, []);
 
@@ -1011,6 +1044,7 @@ export default function App() {
 
     setMobilePane("output");
     const runtime = getRuntimeKind(activeFile);
+    setBottomPanelMode(runtime === "sqlite" || runtime === "pglite" ? "output" : "terminal");
     const codeToRun =
       syncedSnapshot?.filename === activeFile ? syncedSnapshot.content : file.content;
     terminalRef.current?.writeln(`\x1b[90m$ Running ${activeFile}...\x1b[0m\n`);
@@ -1118,9 +1152,11 @@ export default function App() {
 
     await prepareWorkspaceMutation("switching workspaces");
     setSqlExecution(createEmptySqlExecution());
+    setOpenFiles([]);
     setFiles([]);
     setActiveFile("");
     setActiveWorkspace(workspaceName);
+    setBottomPanelMode("terminal");
     setMobilePane("files");
     terminalRef.current?.writeln(`\x1b[90m[Workspace] Now using ${workspaceName}\x1b[0m`);
   }, [prepareWorkspaceMutation]);
@@ -1137,9 +1173,11 @@ export default function App() {
     nextWorkspaces.sort((left, right) => left.localeCompare(right));
     setWorkspaces(nextWorkspaces);
     setSqlExecution(createEmptySqlExecution());
+    setOpenFiles([]);
     setFiles([]);
     setActiveFile("");
     setActiveWorkspace(created?.name ?? normalizedName);
+    setBottomPanelMode("terminal");
     setMobilePane("files");
     return created?.name ?? normalizedName;
   }, [createWorkspace, listWorkspaces, prepareWorkspaceMutation, workspaces]);
@@ -1202,6 +1240,9 @@ export default function App() {
     await prepareWorkspaceMutation("renaming files");
     await renameWorkspaceFile(currentName, trimmed, activeWorkspaceRef.current);
     clearRecoveryWrite(currentName);
+    setOpenFiles((prev) => prev.map((fileName) => (
+      fileName === currentName ? trimmed : fileName
+    )));
     await refreshWorkspaceFiles(trimmed, { workspaceName: activeWorkspaceRef.current });
   }, [clearRecoveryWrite, files, prepareWorkspaceMutation, refreshWorkspaceFiles, renameWorkspaceFile]);
 
@@ -1209,6 +1250,7 @@ export default function App() {
     await prepareWorkspaceMutation("deleting files");
     await deleteWorkspaceFile(filename, "workspace", activeWorkspaceRef.current);
     clearRecoveryWrite(filename);
+    setOpenFiles((prev) => prev.filter((fileName) => fileName !== filename));
     const remainingNames = files.filter((file) => file.name !== filename).map((file) => file.name);
     if (remainingNames.length === 0) {
       setFiles([]);
@@ -1224,6 +1266,30 @@ export default function App() {
       { workspaceName: activeWorkspaceRef.current },
     );
   }, [clearRecoveryWrite, deleteWorkspaceFile, files, prepareWorkspaceMutation, refreshWorkspaceFiles]);
+
+  const handleCloseTab = useCallback((filename) => {
+    const runtimeBusy = isRunning || isJsRunning || isSqlRunning;
+    if (runtimeBusy && filename === activeFileRef.current) {
+      terminalRef.current?.writeln("\x1b[33m[WasmForge] Finish or stop the active session before closing the active tab.\x1b[0m");
+      return;
+    }
+
+    const nextTabs = openFiles.filter((fileName) => fileName !== filename);
+    setOpenFiles(nextTabs);
+
+    if (filename !== activeFileRef.current) {
+      return;
+    }
+
+    const nextActive = nextTabs[nextTabs.length - 1] ?? "";
+    if (nextActive) {
+      void handleFileSelect(nextActive);
+      return;
+    }
+
+    setActiveFile("");
+  }, [handleFileSelect, isJsRunning, isRunning, isSqlRunning, openFiles]);
+
   const activeFileData = files.find((file) => file.name === activeFile);
   const isMobileLayout = viewportWidth < MOBILE_LAYOUT_BREAKPOINT;
   const activeRuntime = getRuntimeKind(activeFile);
@@ -1269,18 +1335,20 @@ export default function App() {
     activeRuntime === "javascript" ||
     activeRuntime === "sqlite" ||
     activeRuntime === "pglite";
-  const runtimePresentation = getRuntimePresentation(activeRuntime);
-  const statusColor =
-    activeHasError
-      ? "#ff7b72"
-      : activeRuntime === "python" && isAwaitingInput
-        ? "#79c0ff"
-        : activeRuntimeRunning
-          ? "#f0b95a"
-          : activeRuntimeReady
-            ? "#7ee787"
-            : "#8b949e";
   const draftStorageKey = getRecoveryStorageKey(activeWorkspace);
+  const statusBarTone = getStatusBarTone(
+    activeRuntime,
+    activeStatusMessage,
+    activeRuntimeRunning,
+    activeHasError,
+    activeRuntimeReady,
+    isAwaitingInput,
+  );
+  const currentLanguageLabel = getRuntimeLanguageLabel(activeRuntime, activeFile);
+
+  useEffect(() => {
+    setBottomPanelMode(showResultsPanel ? "output" : "terminal");
+  }, [activeFile, showResultsPanel]);
 
   useEffect(() => {
     if (!isMobileLayout) {
@@ -1293,14 +1361,14 @@ export default function App() {
   }, [activeFile, files.length, isMobileLayout]);
 
   useEffect(() => {
-    if (showResultsPanel) {
+    if (bottomPanelMode !== "terminal") {
       return;
     }
     if (isMobileLayout && mobilePane !== "output") {
       return;
     }
     requestTerminalResize();
-  }, [isMobileLayout, mobilePane, requestTerminalResize, showResultsPanel]);
+  }, [bottomPanelMode, isMobileLayout, mobilePane, requestTerminalResize]);
 
   useEffect(() => {
     if (!isMobileLayout || mobilePane !== "editor") {
@@ -1316,257 +1384,735 @@ export default function App() {
     };
   }, [activeFile, isMobileLayout, mobilePane]);
 
-  const terminalVisible = !showResultsPanel && (!isMobileLayout || mobilePane === "output");
+  const fileTabs = openFiles.filter((filename) => files.some((file) => file.name === filename));
+  const terminalVisible = bottomPanelMode === "terminal" && (!isMobileLayout || mobilePane === "output");
+  const outputVisible = bottomPanelMode === "output" && (!isMobileLayout || mobilePane === "output");
+  const editorPaneStyle =
+    isMobileLayout || editorPaneHeight === null
+      ? { flex: `${DEFAULT_EDITOR_RATIO} 1 0%` }
+      : { flex: `0 0 ${editorPaneHeight}px` };
+  const runButtonDisabled = isAnyRuntimeBusy || activeRuntime === "unknown" || !activeRuntimeReady;
+  const desktopNavWidth = ACTIVITY_BAR_WIDTH + SIDEBAR_WIDTH;
+
   const filesPanel = (
-    <div style={{ width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}>
-      <FileTree
-        files={files}
-        activeFile={activeFile}
-        onFileSelect={handleFileSelect}
-        onCreateFile={handleCreateFile}
-        onRenameFile={handleRenameFile}
-        onDeleteFile={handleDeleteFile}
-        disabled={isAnyRuntimeBusy}
-      />
-    </div>
+    <FileTree
+      files={files}
+      activeFile={activeFile}
+      activeWorkspace={activeWorkspace}
+      workspaces={workspaces}
+      onSelectWorkspace={(workspaceName) => {
+        void handleWorkspaceSelect(workspaceName);
+      }}
+      onCreateWorkspace={handleCreateWorkspace}
+      onFileSelect={handleFileSelect}
+      onCreateFile={handleCreateFile}
+      onRenameFile={handleRenameFile}
+      onDeleteFile={handleDeleteFile}
+      disabled={isAnyRuntimeBusy || !workspaceBootstrapped}
+    />
   );
+
   const editorPanel = (
     <div
       style={{
         height: "100%",
         minWidth: 0,
         minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        background: "#0d141c",
-        borderLeft: isMobileLayout ? "none" : "1px solid rgba(90, 108, 135, 0.1)",
-        borderRight: isMobileLayout ? "none" : "1px solid rgba(90, 108, 135, 0.1)",
+        overflow: "hidden",
+        background: "#1e1e1e",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
       }}
     >
-      <div style={{ padding: isMobileLayout ? "10px 14px" : "12px 16px", borderBottom: "1px solid rgba(90, 108, 135, 0.12)", background: "#111821", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-        <div>
-          <SectionLabel>Editor</SectionLabel>
-          <div style={{ color: "#f5f7fb", fontSize: "13px", fontWeight: 700, marginTop: "4px" }}>{activeFile || "No file selected"}</div>
-        </div>
-        <div style={{ color: "#8c98a8", fontSize: "12px", maxWidth: "40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeWorkspace}</div>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-        {files.length === 0 ? (
-          <EmptyEditorState workspaceName={activeWorkspace} isMobile={isMobileLayout} />
-        ) : (
-          <Suspense fallback={<div style={{ height: "100%", display: "grid", placeItems: "center", color: "#8b949e", fontSize: "13px", background: "#0d1117" }}>Loading editor...</div>}>
-            <Editor code={activeFileData?.content ?? ""} filename={activeFile || DEFAULT_FILENAME} onChange={handleCodeChange} onMount={handleEditorMount} language={getLanguage(activeFile || DEFAULT_FILENAME)} readOnly={isAnyRuntimeBusy} draftStorageKey={draftStorageKey} />
-          </Suspense>
-        )}
-      </div>
+      {files.length === 0 ? (
+        <EmptyEditorState workspaceName={activeWorkspace} isMobile={isMobileLayout} />
+      ) : !activeFile ? (
+        <EmptyEditorState workspaceName={activeWorkspace} hasFiles isMobile={isMobileLayout} />
+      ) : (
+        <Suspense
+          fallback={(
+            <div
+              style={{
+                height: "100%",
+                display: "grid",
+                placeItems: "center",
+                color: "#858585",
+                fontSize: "13px",
+                background: "#1e1e1e",
+              }}
+            >
+              Loading editor...
+            </div>
+          )}
+        >
+          <Editor
+            code={activeFileData?.content ?? ""}
+            filename={activeFile || DEFAULT_FILENAME}
+            onChange={handleCodeChange}
+            onMount={handleEditorMount}
+            language={getLanguage(activeFile || DEFAULT_FILENAME)}
+            readOnly={isAnyRuntimeBusy}
+            draftStorageKey={draftStorageKey}
+          />
+        </Suspense>
+      )}
     </div>
   );
+
   const outputPanel = (
-    <div style={{ height: "100%", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", background: "#0d141b" }}>
-      <div style={{ padding: isMobileLayout ? "10px 14px" : "12px 16px", borderBottom: "1px solid rgba(90, 108, 135, 0.14)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "#111821" }}>
-        <div>
-          <SectionLabel>{showResultsPanel ? "Results & Schema" : "Terminal"}</SectionLabel>
-          <div style={{ color: "#f5f7fb", fontSize: "13px", fontWeight: 700, marginTop: "4px" }}>{showResultsPanel ? "Query results" : `${runtimePresentation.label} console`}</div>
+    <div
+      style={{
+        height: "100%",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        background: "linear-gradient(180deg, #1e1e1e 0%, #191919 100%)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
+      }}
+    >
+      <div
+        style={{
+          height: `${BOTTOM_TABBAR_HEIGHT}px`,
+          display: "flex",
+          alignItems: "stretch",
+          justifyContent: "space-between",
+          borderBottom: "1px solid #1e1e1e",
+          background: "linear-gradient(180deg, #29292a 0%, #252526 100%)",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "stretch" }}>
+          <BottomPanelTab active={bottomPanelMode === "terminal"} onClick={() => setBottomPanelMode("terminal")}>
+            TERMINAL
+          </BottomPanelTab>
+          <BottomPanelTab active={bottomPanelMode === "output"} onClick={() => setBottomPanelMode("output")}>
+            OUTPUT
+          </BottomPanelTab>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
-          <div style={{ color: runtimePresentation.accent, background: runtimePresentation.bg, border: `1px solid ${runtimePresentation.border}`, padding: "4px 9px", borderRadius: "10px", fontSize: "11px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>{showResultsPanel ? "SQL" : runtimePresentation.label}</div>
-          <button onClick={() => {
-            if (showResultsPanel) {
-              setSqlExecution(createEmptySqlExecution());
-            } else {
+
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "0 12px" }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (bottomPanelMode === "output" && showResultsPanel) {
+                setSqlExecution(createEmptySqlExecution());
+                return;
+              }
               terminalRef.current?.clear?.();
-            }
-          }} style={utilityButtonStyle()}>
-            {showResultsPanel ? "Clear Results" : "Clear"}
+            }}
+            style={terminalActionButtonStyle()}
+          >
+            Clear
           </button>
+          {canKillActiveRuntime && activeRuntimeRunning ? (
+            <button type="button" onClick={handleKill} style={terminalActionButtonStyle({ color: "#f48771" })}>
+              Kill
+            </button>
+          ) : null}
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+
+      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#1b1b1c" }}>
         <div style={{ display: terminalVisible ? "block" : "none", height: "100%" }}>
           <Terminal ref={terminalRef} isVisible={terminalVisible} />
         </div>
-        <div style={{ display: showResultsPanel ? "block" : "none", height: "100%" }}>
-          <SqlResultsPanel activeFile={activeFile} engine={activeRuntime} result={activeSqlResult} isReady={activeRuntimeReady} isRunning={activeRuntimeRunning} status={activeStatusMessage} schema={activeSqlResult?.schema} />
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{ minHeight: "100dvh", height: isMobileLayout ? "auto" : "100dvh", overflow: isMobileLayout ? "visible" : "hidden", background: "linear-gradient(180deg, #0b1016 0%, #090d13 100%)", color: "#c9d1d9", fontFamily: '"Aptos", "Segoe UI", sans-serif', padding: isMobileLayout ? "6px" : "10px", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", flexDirection: "column", minHeight: isMobileLayout ? "auto" : "100%", height: isMobileLayout ? "auto" : "100%", borderRadius: isMobileLayout ? "14px" : "18px", overflow: isMobileLayout ? "visible" : "hidden", background: "#0c1219", border: "1px solid rgba(90, 108, 135, 0.18)", boxShadow: isMobileLayout ? "none" : "0 14px 36px rgba(2, 8, 23, 0.28)" }}>
-        <div style={{ padding: isMobileLayout ? "14px" : "16px 18px", borderBottom: "1px solid rgba(90, 108, 135, 0.16)", background: "#111821" }}>
-          <div style={{ display: "flex", alignItems: isMobileLayout ? "stretch" : "center", gap: "14px", flexWrap: isMobileLayout ? "nowrap" : "wrap", flexDirection: isMobileLayout ? "column" : "row" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: isMobileLayout ? 0 : "220px" }}>
-              <div style={{ width: "42px", height: "42px", borderRadius: "12px", display: "grid", placeItems: "center", background: "#131c27", border: "1px solid rgba(90, 108, 135, 0.22)", color: "#d9e3ef", fontWeight: 900, letterSpacing: "0.08em" }}>WF</div>
-              <div>
-                <div style={{ color: "#f5f7fb", fontSize: "18px", fontWeight: 800 }}>WasmForge</div>
-                <div style={{ color: "#8c98a8", fontSize: "12px", marginTop: "4px" }}>Browser-native IDE with persistent workspaces</div>
-              </div>
-            </div>
-
-            <div style={{ width: isMobileLayout ? "100%" : "auto", flex: isMobileLayout ? "1 1 100%" : "0 1 auto" }}>
-              <WorkspaceSwitcher
-                workspaces={workspaces}
-                activeWorkspace={activeWorkspace}
-                onSelectWorkspace={(workspaceName) => { void handleWorkspaceSelect(workspaceName); }}
-                onCreateWorkspace={handleCreateWorkspace}
-                disabled={isAnyRuntimeBusy || !workspaceBootstrapped}
-                fullWidth={isMobileLayout}
-              />
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", borderRadius: "12px", border: "1px solid rgba(95, 112, 140, 0.18)", background: "#0f161f", minWidth: isMobileLayout ? 0 : "220px", width: isMobileLayout ? "100%" : "auto", flex: isMobileLayout ? "1 1 100%" : 1 }}>
-              <RuntimeBadge runtime={activeRuntime} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <SectionLabel>Active File</SectionLabel>
-                <div style={{ color: "#f5f7fb", fontSize: "14px", fontWeight: 700, marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{activeFile || "No file selected"}</div>
-              </div>
-            </div>
-
-            {!isMobileLayout ? <div style={{ flex: 1 }} /> : null}
-
-            <div style={{ display: "flex", alignItems: isMobileLayout ? "stretch" : "center", flexDirection: isMobileLayout ? "column" : "row", gap: "12px", flexWrap: "wrap", justifyContent: "flex-end", width: isMobileLayout ? "100%" : "auto" }}>
-              <div style={{ padding: "10px 14px", borderRadius: "12px", border: "1px solid rgba(95, 112, 140, 0.18)", background: "#0f161f", minWidth: isMobileLayout ? 0 : "210px", width: isMobileLayout ? "100%" : "auto" }}>
-                <SectionLabel>Status</SectionLabel>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", color: statusColor, fontSize: "13px", fontWeight: 700, marginTop: "6px" }}>
-                  <span style={{ width: "8px", height: "8px", borderRadius: "999px", background: statusColor, flexShrink: 0 }} />
-                  <span>{activeStatusMessage}</span>
-                </div>
-              </div>
-
-              {canKillActiveRuntime && activeRuntimeRunning ? (
-                <button onClick={handleKill} style={actionButtonStyle({ background: "#3f2226", border: "#6b3b42", fullWidth: isMobileLayout })}>Stop</button>
-              ) : (
-                <button
-                  onClick={handleRun}
-                  disabled={isAnyRuntimeBusy || activeRuntime === "unknown" || !activeRuntimeReady}
-                  style={actionButtonStyle({
-                    background: activeRuntimeReady && !isAnyRuntimeBusy ? "#173728" : "#1a212b",
-                    border: activeRuntimeReady && !isAnyRuntimeBusy ? "#29543f" : "#394150",
-                    disabled: isAnyRuntimeBusy || activeRuntime === "unknown" || !activeRuntimeReady,
-                    fullWidth: isMobileLayout,
-                  })}
-                >
-                  {activeRuntimeRunning ? "Running..." : isAnyRuntimeBusy ? "Busy" : "Run"}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div ref={shellBodyRef} style={{ flex: isMobileLayout ? "0 0 auto" : 1, display: "flex", minHeight: isMobileLayout ? "min(92dvh, 760px)" : 0, height: isMobileLayout ? "min(92dvh, 760px)" : "auto", overflow: isMobileLayout ? "visible" : "hidden", flexDirection: isMobileLayout ? "column" : "row" }}>
-          {isMobileLayout ? (
-            <>
-              <div style={{ display: "flex", gap: "8px", padding: "10px 12px", borderBottom: "1px solid rgba(90, 108, 135, 0.12)", background: "#101720", flexWrap: "wrap" }}>
-                <button type="button" onClick={() => setMobilePane("files")} style={paneButtonStyle(mobilePane === "files")}>Files</button>
-                <button type="button" onClick={() => setMobilePane("editor")} style={paneButtonStyle(mobilePane === "editor")}>Editor</button>
-                <button type="button" onClick={() => setMobilePane("output")} style={paneButtonStyle(mobilePane === "output")}>{showResultsPanel ? "Results" : "Console"}</button>
-              </div>
-              <div style={{ flex: 1, minHeight: 0, overflow: "hidden", position: "relative" }}>
-                <div style={{ display: mobilePane === "files" ? "block" : "none", height: "100%" }}>{filesPanel}</div>
-                <div style={{ display: mobilePane === "editor" ? "block" : "none", height: "100%" }}>{editorPanel}</div>
-                <div style={{ display: mobilePane === "output" ? "block" : "none", height: "100%" }}>{outputPanel}</div>
-              </div>
-            </>
+        <div style={{ display: outputVisible ? "block" : "none", height: "100%" }}>
+          {showResultsPanel ? (
+            <SqlResultsPanel
+              activeFile={activeFile}
+              engine={activeRuntime}
+              result={activeSqlResult}
+              isReady={activeRuntimeReady}
+              isRunning={activeRuntimeRunning}
+              status={activeStatusMessage}
+              schema={activeSqlResult?.schema}
+            />
           ) : (
-            <>
-              <div style={{ width: `${panelLayout.left}px`, minWidth: 0, flexShrink: 0 }}>
-                {filesPanel}
-              </div>
-              <ResizeHandle onPointerDown={startResize("left")} />
-              <div style={{ flex: 1, minWidth: 0, display: "flex", overflow: "hidden" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {editorPanel}
-                </div>
-                <ResizeHandle onPointerDown={startResize("right")} />
-                <div style={{ width: `${panelLayout.right}px`, minWidth: 0, flexShrink: 0 }}>
-                  {outputPanel}
-                </div>
-              </div>
-            </>
+            <OutputPlaceholder activeFile={activeFile} />
           )}
         </div>
       </div>
     </div>
   );
-}
-
-function ResizeHandle({ onPointerDown }) {
-  return (
-    <div onPointerDown={onPointerDown} style={{ width: `${RESIZE_HANDLE_WIDTH}px`, flexShrink: 0, cursor: "col-resize", display: "grid", placeItems: "center", background: "transparent" }}>
-      <div style={{ width: "1px", height: "100%", background: "rgba(90, 108, 135, 0.16)", borderRadius: "999px" }} />
-    </div>
-  );
-}
-
-function RuntimeBadge({ runtime }) {
-  const presentation = getRuntimePresentation(runtime);
 
   return (
-    <div style={{ minWidth: "48px", height: "38px", borderRadius: "10px", display: "grid", placeItems: "center", background: presentation.bg, border: `1px solid ${presentation.border}`, color: presentation.accent, fontSize: "11px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>
-      {presentation.label}
-    </div>
-  );
-}
+    <div
+      style={{
+        minHeight: "100dvh",
+        height: "100dvh",
+        overflow: "hidden",
+        background: "#1e1e1e",
+        color: "#d4d4d4",
+        fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        style={{
+          height: `${TOP_HEADER_HEIGHT}px`,
+          minHeight: `${TOP_HEADER_HEIGHT}px`,
+          display: "flex",
+          alignItems: "stretch",
+          background: "linear-gradient(180deg, #3d3d3d 0%, #383838 100%)",
+          borderBottom: "1px solid #1e1e1e",
+          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.03)",
+        }}
+      >
+        <div
+          style={{
+            width: isMobileLayout ? "auto" : `${desktopNavWidth}px`,
+            minWidth: isMobileLayout ? "auto" : `${desktopNavWidth}px`,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "0 12px",
+            flexShrink: 0,
+            borderRight: isMobileLayout ? "none" : "1px solid #1e1e1e",
+          }}
+        >
+          <LogoMark />
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+            <div style={{ color: "#ffffff", fontSize: "13px", fontWeight: 600 }}>WasmForge</div>
+            {!isMobileLayout ? (
+              <span
+                style={{
+                  color: "#9fa4aa",
+                  fontSize: "10px",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Local IDE
+              </span>
+            ) : null}
+          </div>
+        </div>
 
-function EmptyEditorState({ workspaceName, isMobile = false }) {
-  return (
-    <div style={{ height: "100%", display: "grid", placeItems: "center", padding: isMobile ? "18px" : "24px", background: "#0d141c" }}>
-      <div style={{ maxWidth: "420px", textAlign: "center", borderRadius: "16px", border: "1px dashed rgba(95, 112, 140, 0.2)", background: "#101720", padding: isMobile ? "22px" : "28px" }}>
-        <div style={{ color: "#8ea2bf", fontSize: "11px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase" }}>Empty Workspace</div>
-        <div style={{ color: "#f5f7fb", fontSize: isMobile ? "20px" : "22px", fontWeight: 800, marginTop: "10px" }}>{workspaceName}</div>
-        <div style={{ color: "#8ea2bf", fontSize: "13px", marginTop: "12px", lineHeight: 1.6 }}>
-          This workspace is empty. Create a file from the sidebar to start working in this workspace.
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            alignItems: "flex-end",
+            overflowX: "auto",
+            scrollbarWidth: "thin",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%)",
+          }}
+        >
+          {fileTabs.length === 0 ? (
+            <div style={{ padding: "0 12px 10px", color: "#858585", fontSize: "12px" }}>
+              No file selected
+            </div>
+          ) : (
+            fileTabs.map((filename) => (
+              <HeaderTab
+                key={filename}
+                active={filename === activeFile}
+                filename={filename}
+                onSelect={() => {
+                  void handleFileSelect(filename);
+                }}
+                onClose={() => handleCloseTab(filename)}
+              />
+            ))
+          )}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            padding: "0 12px",
+            flexShrink: 0,
+          }}
+        >
+          <button type="button" onClick={handleRun} disabled={runButtonDisabled} style={runButtonStyle(runButtonDisabled)}>
+            ▶ Run
+          </button>
+        </div>
+      </div>
+
+      {isMobileLayout ? (
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              height: "34px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "0 10px",
+              background: "#252526",
+              borderBottom: "1px solid #1e1e1e",
+              flexShrink: 0,
+            }}
+          >
+            <MobilePaneButton active={mobilePane === "files"} onClick={() => setMobilePane("files")}>
+              Explorer
+            </MobilePaneButton>
+            <MobilePaneButton active={mobilePane === "editor"} onClick={() => setMobilePane("editor")}>
+              Editor
+            </MobilePaneButton>
+            <MobilePaneButton active={mobilePane === "output"} onClick={() => setMobilePane("output")}>
+              {bottomPanelMode === "output" ? "Output" : "Terminal"}
+            </MobilePaneButton>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ display: mobilePane === "files" ? "block" : "none", height: "100%" }}>{filesPanel}</div>
+            <div style={{ display: mobilePane === "editor" ? "block" : "none", height: "100%" }}>{editorPanel}</div>
+            <div style={{ display: mobilePane === "output" ? "block" : "none", height: "100%" }}>{outputPanel}</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+          <div
+            style={{
+              width: `${ACTIVITY_BAR_WIDTH}px`,
+              background: "linear-gradient(180deg, #343434 0%, #2f2f2f 100%)",
+              borderRight: "1px solid #1e1e1e",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "stretch",
+              paddingTop: "10px",
+              flexShrink: 0,
+            }}
+          >
+            <ActivityButton active title="Explorer">
+              <ExplorerIcon />
+            </ActivityButton>
+            <ActivityButton title="Search" disabled>
+              <SearchIcon />
+            </ActivityButton>
+          </div>
+
+          <div
+            style={{
+              width: `${SIDEBAR_WIDTH}px`,
+              background: "linear-gradient(180deg, #272729 0%, #252526 100%)",
+              borderRight: "1px solid #1e1e1e",
+              minWidth: 0,
+              flexShrink: 0,
+              boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02)",
+            }}
+          >
+            {filesPanel}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <div ref={shellBodyRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...editorPaneStyle, minHeight: MIN_EDITOR_PANEL_HEIGHT, minWidth: 0 }}>
+                {editorPanel}
+              </div>
+              <HorizontalResizeHandle onPointerDown={startResize("editor-terminal")} />
+              <div style={{ flex: 1, minHeight: MIN_TERMINAL_PANEL_HEIGHT, minWidth: 0 }}>
+                {outputPanel}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          height: `${STATUS_BAR_HEIGHT}px`,
+          minHeight: `${STATUS_BAR_HEIGHT}px`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          padding: "0 10px",
+          background: "#007acc",
+          color: "#ffffff",
+          fontSize: "12px",
+          borderTop: "1px solid #1e1e1e",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+          <span style={{ ...statusBarTokenStyle(), maxWidth: "220px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {activeWorkspace}
+          </span>
+          <span style={{ ...statusBarTokenStyle(), display: "inline-flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "999px",
+                background: statusBarTone,
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {activeStatusMessage}
+            </span>
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+          <span style={statusBarTokenStyle()}>{currentLanguageLabel}</span>
+          <span style={statusBarTokenStyle()}>⚡ Offline-ready</span>
         </div>
       </div>
     </div>
   );
 }
 
-function SectionLabel({ children }) {
-  return <div style={{ color: "#8ea2bf", fontSize: "10px", fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>{children}</div>;
+function HorizontalResizeHandle({ onPointerDown }) {
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      style={{
+        height: `${EDITOR_SPLIT_HANDLE_HEIGHT}px`,
+        flexShrink: 0,
+        cursor: "row-resize",
+        background: "#1e1e1e",
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <div style={{ width: "56px", height: "1px", background: "#37373d", boxShadow: "0 0 12px rgba(0,122,204,0.18)" }} />
+    </div>
+  );
 }
 
-function actionButtonStyle({ background, border, disabled = false, fullWidth = false }) {
+function ActivityButton({ active = false, children, disabled = false, title }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      style={{
+        height: "40px",
+        border: "none",
+        borderLeft: `2px solid ${active ? "#007acc" : "transparent"}`,
+        background: active ? "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)" : "transparent",
+        color: active ? "#ffffff" : "#858585",
+        display: "grid",
+        placeItems: "center",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.8 : 1,
+        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.03)" : "none",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HeaderTab({ active = false, filename, onSelect, onClose }) {
+  const visual = getFileVisualMeta(filename);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        height: "35px",
+        minWidth: "132px",
+        maxWidth: "220px",
+        padding: "0 10px",
+        border: "none",
+        borderTop: `1px solid ${active ? "#007acc" : "transparent"}`,
+        borderRight: "1px solid #1e1e1e",
+        background: active ? "#1e1e1e" : "linear-gradient(180deg, #313131 0%, #2b2b2b 100%)",
+        color: active ? "#ffffff" : "#d4d4d4",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        cursor: "pointer",
+        flexShrink: 0,
+        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.03)" : "none",
+      }}
+    >
+      <span
+        style={{
+          width: "18px",
+          height: "18px",
+          borderRadius: "5px",
+          display: "grid",
+          placeItems: "center",
+          background: visual.surface,
+          color: visual.accent,
+          fontSize: "10px",
+          fontWeight: 700,
+          flexShrink: 0,
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+        }}
+      >
+        {visual.label}
+      </span>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontFamily: '"Cascadia Code", Consolas, monospace',
+          fontSize: "13px",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          textAlign: "left",
+        }}
+      >
+        {filename}
+      </span>
+      <span
+        onClick={(event) => {
+          event.stopPropagation();
+          onClose();
+        }}
+        style={{
+          color: active ? "#9da3aa" : "#858585",
+          fontSize: "12px",
+          lineHeight: 1,
+          width: "16px",
+          height: "16px",
+          display: "grid",
+          placeItems: "center",
+          borderRadius: "4px",
+          background: active ? "rgba(255,255,255,0.04)" : "transparent",
+        }}
+      >
+        ×
+      </span>
+    </button>
+  );
+}
+
+function BottomPanelTab({ active = false, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: "none",
+        borderBottom: `1px solid ${active ? "#007acc" : "transparent"}`,
+        background: active ? "rgba(255,255,255,0.03)" : "transparent",
+        color: active ? "#ffffff" : "#858585",
+        padding: "0 14px",
+        fontSize: "12px",
+        fontWeight: 600,
+        letterSpacing: "0.04em",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MobilePaneButton({ active = false, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        height: "24px",
+        border: "none",
+        background: active ? "#37373d" : "rgba(255,255,255,0.02)",
+        color: active ? "#ffffff" : "#858585",
+        borderRadius: "4px",
+        padding: "0 10px",
+        fontSize: "12px",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LogoMark() {
+  return (
+    <div
+      style={{
+        width: "20px",
+        height: "20px",
+        borderRadius: "4px",
+        display: "grid",
+        placeItems: "center",
+        background: "linear-gradient(180deg, #1f9dff 0%, #007acc 100%)",
+        color: "#ffffff",
+        fontSize: "11px",
+        fontWeight: 800,
+        boxShadow: "0 8px 18px rgba(0,122,204,0.28), inset 0 1px 0 rgba(255,255,255,0.24)",
+      }}
+    >
+      W
+    </div>
+  );
+}
+
+function ExplorerIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.25 4.25h4.1l1.1 1.25h6.3v6.25a1 1 0 0 1-1 1H3.25a1 1 0 0 1-1-1V4.25Z" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M2.25 5.5h11.5" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="6.75" cy="6.75" r="3.75" stroke="currentColor" strokeWidth="1.1" />
+      <path d="m9.75 9.75 3 3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function OutputPlaceholder({ activeFile }) {
+  const visual = getFileVisualMeta(activeFile || "main.sql");
+  return (
+    <div
+      style={{
+        height: "100%",
+        display: "grid",
+        placeItems: "center",
+        background: "radial-gradient(circle at top, rgba(0,122,204,0.06), transparent 34%), #1e1e1e",
+        color: "#858585",
+        padding: "24px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ maxWidth: "440px" }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minWidth: "48px",
+            height: "22px",
+            padding: "0 10px",
+            borderRadius: "999px",
+            background: visual.surface,
+            color: visual.accent,
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+          }}
+        >
+          {visual.label}
+        </div>
+        <div style={{ marginTop: "14px", color: "#d4d4d4", fontSize: "15px", fontWeight: 600 }}>
+          Output panel is idle
+        </div>
+        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.7 }}>
+          Run a SQL file such as {activeFile || "main.sql"} to populate this panel with query results.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false }) {
+  return (
+    <div
+      style={{
+        height: "100%",
+        display: "grid",
+        placeItems: "center",
+        padding: isMobile ? "18px" : "24px",
+        background: "radial-gradient(circle at top, rgba(0,122,204,0.05), transparent 36%), #1e1e1e",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "420px",
+          textAlign: "center",
+          padding: isMobile ? "20px" : "24px",
+        }}
+      >
+        <div style={{ color: "#bbbbbb", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>
+          Explorer
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            marginTop: "12px",
+            padding: "6px 12px",
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.03)",
+            color: "#d4d4d4",
+            fontFamily: '"Cascadia Code", Consolas, monospace',
+            fontSize: "12px",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+          }}
+        >
+          <span style={{ width: "7px", height: "7px", borderRadius: "999px", background: "#007acc", flexShrink: 0 }} />
+          {workspaceName}
+        </div>
+        <div style={{ color: "#ffffff", fontSize: isMobile ? "18px" : "22px", fontWeight: 700, marginTop: "18px" }}>
+          {hasFiles ? "Pick a file to start editing" : "Create your first file"}
+        </div>
+        <div style={{ color: "#858585", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
+          {hasFiles
+            ? "Select a file from the explorer to open it in the editor."
+            : "Create a file from the explorer to start working in this workspace."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function terminalActionButtonStyle({ color = "#d4d4d4" } = {}) {
   return {
-    background,
-    border: `1px solid ${border}`,
-    color: disabled ? "#7b8594" : "#f5f7fb",
-    padding: "11px 16px",
-    borderRadius: "12px",
-    cursor: disabled ? "not-allowed" : "pointer",
-    fontSize: "13px",
-    fontWeight: 800,
+    border: "1px solid rgba(255,255,255,0.05)",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+    color,
+    fontSize: "12px",
+    cursor: "pointer",
+    padding: "5px 10px",
+    borderRadius: "6px",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+  };
+}
+
+function runButtonStyle(disabled = false) {
+  return {
+    height: "28px",
+    border: "none",
+    borderRadius: "4px",
+    background: disabled ? "#2f5d3e" : "linear-gradient(180deg, #48c75a 0%, #3fb950 100%)",
+    color: "#ffffff",
+    padding: "0 12px",
+    fontSize: "12px",
+    fontWeight: 700,
     letterSpacing: "0.02em",
-    minWidth: fullWidth ? "100%" : "132px",
-    width: fullWidth ? "100%" : "auto",
-    opacity: disabled ? 0.7 : 1,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.72 : 1,
+    boxShadow: disabled ? "none" : "0 8px 18px rgba(63,185,80,0.18), inset 0 1px 0 rgba(255,255,255,0.18)",
   };
 }
 
-function utilityButtonStyle() {
+function statusBarTokenStyle() {
   return {
-    background: "#101720",
-    border: "1px solid rgba(95, 112, 140, 0.22)",
-    color: "#c9d1d9",
-    padding: "9px 12px",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 700,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "rgba(0,0,0,0.16)",
+    padding: "2px 8px",
+    borderRadius: "999px",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
   };
 }
 
-function paneButtonStyle(active = false) {
-  return {
-    border: `1px solid ${active ? "rgba(118, 132, 153, 0.3)" : "rgba(95, 112, 140, 0.18)"}`,
-    background: active ? "rgba(95, 112, 140, 0.16)" : "#0f161f",
-    color: active ? "#f5f7fb" : "#aab5c2",
-    padding: "9px 12px",
-    borderRadius: "10px",
-    fontSize: "12px",
-    fontWeight: 700,
-    cursor: "pointer",
-  };
+function getFileVisualMeta(filename = "") {
+  switch (getFileExtension(filename)) {
+    case "py":
+      return { label: "PY", accent: "#4ec9b0", surface: "rgba(78, 201, 176, 0.16)" };
+    case "js":
+      return { label: "JS", accent: "#dcdcaa", surface: "rgba(220, 220, 170, 0.16)" };
+    case "ts":
+      return { label: "TS", accent: "#4fc1ff", surface: "rgba(79, 193, 255, 0.16)" };
+    case "sql":
+      return { label: "SQL", accent: "#c586c0", surface: "rgba(197, 134, 192, 0.16)" };
+    case "pg":
+      return { label: "PG", accent: "#9cdcfe", surface: "rgba(156, 220, 254, 0.16)" };
+    default:
+      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.16)" };
+  }
 }

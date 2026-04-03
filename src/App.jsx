@@ -1465,7 +1465,7 @@ export default function App() {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        background: "linear-gradient(180deg, #1e1e1e 0%, #191919 100%)",
+        background: "#111417",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
       }}
     >
@@ -1475,8 +1475,8 @@ export default function App() {
           display: "flex",
           alignItems: "stretch",
           justifyContent: "space-between",
-          borderBottom: "1px solid #1e1e1e",
-          background: "linear-gradient(180deg, #29292a 0%, #252526 100%)",
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          background: "#171b21",
           flexShrink: 0,
         }}
       >
@@ -1511,7 +1511,7 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#1b1b1c" }}>
+      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#111417" }}>
         <div style={{ display: terminalVisible ? "block" : "none", height: "100%" }}>
           <Terminal ref={terminalRef} isVisible={terminalVisible} />
         </div>
@@ -1540,7 +1540,7 @@ export default function App() {
         minHeight: "100dvh",
         height: "100dvh",
         overflow: "hidden",
-        background: "#1e1e1e",
+        background: "#101215",
         color: "#d4d4d4",
         fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
         display: "flex",
@@ -1553,9 +1553,9 @@ export default function App() {
           minHeight: `${TOP_HEADER_HEIGHT}px`,
           display: "flex",
           alignItems: "stretch",
-          background: "linear-gradient(180deg, #3d3d3d 0%, #383838 100%)",
-          borderBottom: "1px solid #1e1e1e",
-          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.03)",
+          background: "linear-gradient(180deg, #232830 0%, #1c2027 100%)",
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.02)",
         }}
       >
         <div
@@ -1567,7 +1567,7 @@ export default function App() {
             gap: "8px",
             padding: "0 12px",
             flexShrink: 0,
-            borderRight: isMobileLayout ? "none" : "1px solid #1e1e1e",
+            borderRight: isMobileLayout ? "none" : "1px solid rgba(255,255,255,0.04)",
           }}
         >
           <LogoMark />
@@ -1576,9 +1576,9 @@ export default function App() {
             {!isMobileLayout ? (
               <span
                 style={{
-                  color: "#9fa4aa",
+                  color: "#7e8692",
                   fontSize: "10px",
-                  letterSpacing: "0.08em",
+                  letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   whiteSpace: "nowrap",
                 }}
@@ -1594,14 +1594,14 @@ export default function App() {
             flex: 1,
             minWidth: 0,
             display: "flex",
-            alignItems: "flex-end",
+            alignItems: "stretch",
             overflowX: "auto",
             scrollbarWidth: "thin",
-            background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, rgba(255,255,255,0) 100%)",
           }}
         >
           {fileTabs.length === 0 ? (
-            <div style={{ padding: "0 12px 10px", color: "#858585", fontSize: "12px" }}>
+            <div style={{ padding: "0 12px", color: "#737b86", fontSize: "12px", display: "flex", alignItems: "center" }}>
               No file selected
             </div>
           ) : (
@@ -1626,6 +1626,7 @@ export default function App() {
             justifyContent: "flex-end",
             padding: "0 12px",
             flexShrink: 0,
+            borderLeft: "1px solid rgba(255,255,255,0.04)",
           }}
         >
           <button type="button" onClick={handleRun} disabled={runButtonDisabled} style={runButtonStyle(runButtonDisabled)}>
@@ -1643,8 +1644,8 @@ export default function App() {
               alignItems: "center",
               gap: "6px",
               padding: "0 10px",
-              background: "#252526",
-              borderBottom: "1px solid #1e1e1e",
+              background: "#171b21",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
               flexShrink: 0,
             }}
           >
@@ -1670,8 +1671,8 @@ export default function App() {
           <div
             style={{
               width: `${ACTIVITY_BAR_WIDTH}px`,
-              background: "linear-gradient(180deg, #343434 0%, #2f2f2f 100%)",
-              borderRight: "1px solid #1e1e1e",
+              background: "linear-gradient(180deg, #171b21 0%, #14181d 100%)",
+              borderRight: "1px solid rgba(255,255,255,0.04)",
               display: "flex",
               flexDirection: "column",
               alignItems: "stretch",
@@ -1690,8 +1691,8 @@ export default function App() {
           <div
             style={{
               width: `${SIDEBAR_WIDTH}px`,
-              background: "linear-gradient(180deg, #272729 0%, #252526 100%)",
-              borderRight: "1px solid #1e1e1e",
+              background: "linear-gradient(180deg, #1a1e24 0%, #171a1f 100%)",
+              borderRight: "1px solid rgba(255,255,255,0.04)",
               minWidth: 0,
               flexShrink: 0,
               boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02)",
@@ -1723,16 +1724,17 @@ export default function App() {
           justifyContent: "space-between",
           gap: "12px",
           padding: "0 10px",
-          background: "#007acc",
+          background: "#006cc4",
           color: "#ffffff",
           fontSize: "12px",
-          borderTop: "1px solid #1e1e1e",
+          borderTop: "1px solid rgba(255,255,255,0.08)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
           <span style={{ ...statusBarTokenStyle(), maxWidth: "220px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {activeWorkspace}
           </span>
+          <span style={statusBarDividerStyle()} />
           <span style={{ ...statusBarTokenStyle(), display: "inline-flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
             <span
               style={{
@@ -1751,6 +1753,7 @@ export default function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
           <span style={statusBarTokenStyle()}>{currentLanguageLabel}</span>
+          <span style={statusBarDividerStyle()} />
           <span style={statusBarTokenStyle()}>⚡ Offline-ready</span>
         </div>
       </div>
@@ -1766,12 +1769,12 @@ function HorizontalResizeHandle({ onPointerDown }) {
         height: `${EDITOR_SPLIT_HANDLE_HEIGHT}px`,
         flexShrink: 0,
         cursor: "row-resize",
-        background: "#1e1e1e",
+        background: "#111417",
         display: "grid",
         placeItems: "center",
       }}
     >
-      <div style={{ width: "56px", height: "1px", background: "#37373d", boxShadow: "0 0 12px rgba(0,122,204,0.18)" }} />
+      <div style={{ width: "48px", height: "1px", background: "#2f353f" }} />
     </div>
   );
 }
@@ -1786,13 +1789,13 @@ function ActivityButton({ active = false, children, disabled = false, title }) {
         height: "40px",
         border: "none",
         borderLeft: `2px solid ${active ? "#007acc" : "transparent"}`,
-        background: active ? "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)" : "transparent",
+        background: active ? "rgba(255,255,255,0.035)" : "transparent",
         color: active ? "#ffffff" : "#858585",
         display: "grid",
         placeItems: "center",
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.8 : 1,
-        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.03)" : "none",
+        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.02)" : "none",
       }}
     >
       {children}
@@ -1813,30 +1816,30 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
         padding: "0 10px",
         border: "none",
         borderTop: `1px solid ${active ? "#007acc" : "transparent"}`,
-        borderRight: "1px solid #1e1e1e",
-        background: active ? "#1e1e1e" : "linear-gradient(180deg, #313131 0%, #2b2b2b 100%)",
+        borderRight: "1px solid rgba(255,255,255,0.035)",
+        background: active ? "#15191f" : "#22262d",
         color: active ? "#ffffff" : "#d4d4d4",
         display: "flex",
         alignItems: "center",
         gap: "8px",
         cursor: "pointer",
         flexShrink: 0,
-        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.03)" : "none",
+        boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.025)" : "none",
       }}
     >
       <span
         style={{
-          width: "18px",
-          height: "18px",
-          borderRadius: "5px",
+          width: "16px",
+          height: "16px",
+          borderRadius: "4px",
           display: "grid",
           placeItems: "center",
           background: visual.surface,
           color: visual.accent,
-          fontSize: "10px",
+          fontSize: "9px",
           fontWeight: 700,
           flexShrink: 0,
-          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.025)",
         }}
       >
         {visual.label}
@@ -1851,6 +1854,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
           textAlign: "left",
+          letterSpacing: "0.01em",
         }}
       >
         {filename}
@@ -1869,7 +1873,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           display: "grid",
           placeItems: "center",
           borderRadius: "4px",
-          background: active ? "rgba(255,255,255,0.04)" : "transparent",
+          background: active ? "rgba(255,255,255,0.03)" : "transparent",
         }}
       >
         ×
@@ -1885,13 +1889,13 @@ function BottomPanelTab({ active = false, children, onClick }) {
       onClick={onClick}
       style={{
         border: "none",
-        borderBottom: `1px solid ${active ? "#007acc" : "transparent"}`,
-        background: active ? "rgba(255,255,255,0.03)" : "transparent",
+        borderBottom: `2px solid ${active ? "#007acc" : "transparent"}`,
+        background: "transparent",
         color: active ? "#ffffff" : "#858585",
         padding: "0 14px",
-        fontSize: "12px",
+        fontSize: "11px",
         fontWeight: 600,
-        letterSpacing: "0.04em",
+        letterSpacing: "0.08em",
         cursor: "pointer",
       }}
     >
@@ -1908,7 +1912,7 @@ function MobilePaneButton({ active = false, children, onClick }) {
       style={{
         height: "24px",
         border: "none",
-        background: active ? "#37373d" : "rgba(255,255,255,0.02)",
+        background: active ? "#22262d" : "transparent",
         color: active ? "#ffffff" : "#858585",
         borderRadius: "4px",
         padding: "0 10px",
@@ -1925,16 +1929,16 @@ function LogoMark() {
   return (
     <div
       style={{
-        width: "20px",
-        height: "20px",
-        borderRadius: "4px",
+        width: "18px",
+        height: "18px",
+        borderRadius: "5px",
         display: "grid",
         placeItems: "center",
-        background: "linear-gradient(180deg, #1f9dff 0%, #007acc 100%)",
+        background: "#007acc",
         color: "#ffffff",
-        fontSize: "11px",
+        fontSize: "10px",
         fontWeight: 800,
-        boxShadow: "0 8px 18px rgba(0,122,204,0.28), inset 0 1px 0 rgba(255,255,255,0.24)",
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)",
       }}
     >
       W
@@ -1968,7 +1972,7 @@ function OutputPlaceholder({ activeFile }) {
         height: "100%",
         display: "grid",
         placeItems: "center",
-        background: "radial-gradient(circle at top, rgba(0,122,204,0.06), transparent 34%), #1e1e1e",
+        background: "#13171c",
         color: "#858585",
         padding: "24px",
         textAlign: "center",
@@ -1980,25 +1984,25 @@ function OutputPlaceholder({ activeFile }) {
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            minWidth: "48px",
-            height: "22px",
-            padding: "0 10px",
-            borderRadius: "999px",
+            minWidth: "42px",
+            height: "18px",
+            padding: "0 8px",
+            borderRadius: "4px",
             background: visual.surface,
             color: visual.accent,
-            fontSize: "11px",
+            fontSize: "10px",
             fontWeight: 700,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.025)",
           }}
         >
           {visual.label}
         </div>
-        <div style={{ marginTop: "14px", color: "#d4d4d4", fontSize: "15px", fontWeight: 600 }}>
+        <div style={{ marginTop: "12px", color: "#d4d4d4", fontSize: "14px", fontWeight: 600 }}>
           Output panel is idle
         </div>
-        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.7 }}>
+        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.65, color: "#7d8590" }}>
           Run a SQL file such as {activeFile || "main.sql"} to populate this panel with query results.
         </div>
       </div>
@@ -2014,7 +2018,7 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
         display: "grid",
         placeItems: "center",
         padding: isMobile ? "18px" : "24px",
-        background: "radial-gradient(circle at top, rgba(0,122,204,0.05), transparent 36%), #1e1e1e",
+        background: "#12161b",
       }}
     >
       <div
@@ -2033,22 +2037,22 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
             alignItems: "center",
             gap: "8px",
             marginTop: "12px",
-            padding: "6px 12px",
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.03)",
+            padding: "4px 10px",
+            borderRadius: "4px",
+            background: "rgba(255,255,255,0.025)",
             color: "#d4d4d4",
             fontFamily: '"Cascadia Code", Consolas, monospace',
-            fontSize: "12px",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+            fontSize: "11px",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.025)",
           }}
         >
           <span style={{ width: "7px", height: "7px", borderRadius: "999px", background: "#007acc", flexShrink: 0 }} />
           {workspaceName}
         </div>
-        <div style={{ color: "#ffffff", fontSize: isMobile ? "18px" : "22px", fontWeight: 700, marginTop: "18px" }}>
+        <div style={{ color: "#ffffff", fontSize: isMobile ? "18px" : "20px", fontWeight: 700, marginTop: "18px" }}>
           {hasFiles ? "Pick a file to start editing" : "Create your first file"}
         </div>
-        <div style={{ color: "#858585", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
+        <div style={{ color: "#7d8590", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
           {hasFiles
             ? "Select a file from the explorer to open it in the editor."
             : "Create a file from the explorer to start working in this workspace."}
@@ -2060,31 +2064,30 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
 
 function terminalActionButtonStyle({ color = "#d4d4d4" } = {}) {
   return {
-    border: "1px solid rgba(255,255,255,0.05)",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+    border: "1px solid rgba(255,255,255,0.04)",
+    background: "rgba(255,255,255,0.02)",
     color,
-    fontSize: "12px",
+    fontSize: "11px",
     cursor: "pointer",
-    padding: "5px 10px",
-    borderRadius: "6px",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+    padding: "4px 9px",
+    borderRadius: "4px",
   };
 }
 
 function runButtonStyle(disabled = false) {
   return {
     height: "28px",
-    border: "none",
+    border: disabled ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(63,185,80,0.35)",
     borderRadius: "4px",
-    background: disabled ? "#2f5d3e" : "linear-gradient(180deg, #48c75a 0%, #3fb950 100%)",
-    color: "#ffffff",
+    background: disabled ? "#252a24" : "linear-gradient(180deg, #1f3024 0%, #17211a 100%)",
+    color: disabled ? "#8e969f" : "#7ee787",
     padding: "0 12px",
     fontSize: "12px",
     fontWeight: 700,
-    letterSpacing: "0.02em",
+    letterSpacing: "0.04em",
     cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.72 : 1,
-    boxShadow: disabled ? "none" : "0 8px 18px rgba(63,185,80,0.18), inset 0 1px 0 rgba(255,255,255,0.18)",
+    opacity: disabled ? 0.82 : 1,
+    boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,0.04)",
   };
 }
 
@@ -2093,26 +2096,34 @@ function statusBarTokenStyle() {
     display: "inline-flex",
     alignItems: "center",
     gap: "6px",
-    background: "rgba(0,0,0,0.16)",
-    padding: "2px 8px",
-    borderRadius: "999px",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+    padding: 0,
+    position: "relative",
+    whiteSpace: "nowrap",
+  };
+}
+
+function statusBarDividerStyle() {
+  return {
+    width: "1px",
+    height: "12px",
+    background: "rgba(255,255,255,0.28)",
+    flexShrink: 0,
   };
 }
 
 function getFileVisualMeta(filename = "") {
   switch (getFileExtension(filename)) {
     case "py":
-      return { label: "PY", accent: "#4ec9b0", surface: "rgba(78, 201, 176, 0.16)" };
+      return { label: "PY", accent: "#7bc4ae", surface: "rgba(123, 196, 174, 0.12)" };
     case "js":
-      return { label: "JS", accent: "#dcdcaa", surface: "rgba(220, 220, 170, 0.16)" };
+      return { label: "JS", accent: "#d6c472", surface: "rgba(214, 196, 114, 0.12)" };
     case "ts":
-      return { label: "TS", accent: "#4fc1ff", surface: "rgba(79, 193, 255, 0.16)" };
+      return { label: "TS", accent: "#7eb5ff", surface: "rgba(126, 181, 255, 0.12)" };
     case "sql":
-      return { label: "SQL", accent: "#c586c0", surface: "rgba(197, 134, 192, 0.16)" };
+      return { label: "SQL", accent: "#b790d7", surface: "rgba(183, 144, 215, 0.12)" };
     case "pg":
-      return { label: "PG", accent: "#9cdcfe", surface: "rgba(156, 220, 254, 0.16)" };
+      return { label: "PG", accent: "#83b7d6", surface: "rgba(131, 183, 214, 0.12)" };
     default:
-      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.16)" };
+      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.1)" };
   }
 }

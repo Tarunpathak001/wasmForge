@@ -180,7 +180,7 @@ function FileTree({
       style={{
         width: "100%",
         height: "100%",
-        background: "linear-gradient(180deg, #262628 0%, #252526 100%)",
+        background: "#171a1f",
         color: "#d4d4d4",
         display: "flex",
         flexDirection: "column",
@@ -190,17 +190,17 @@ function FileTree({
     >
       <div
         style={{
-          padding: "8px 12px 10px",
-          borderBottom: "1px solid rgba(30, 30, 30, 0.92)",
-          background: "linear-gradient(180deg, rgba(39,39,41,0.98) 0%, rgba(37,37,38,1) 100%)",
+          padding: "8px 12px 12px",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
+          background: "#171b21",
           flexShrink: 0,
         }}
       >
         <div
           style={{
             color: "#bbbbbb",
-            fontSize: "11px",
-            letterSpacing: "0.08em",
+            fontSize: "10px",
+            letterSpacing: "0.12em",
             textTransform: "uppercase",
             fontWeight: 700,
           }}
@@ -210,9 +210,9 @@ function FileTree({
 
         <div
           style={{
-            marginTop: "10px",
+            marginTop: "8px",
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "center",
             gap: "8px",
           }}
         >
@@ -234,13 +234,12 @@ function FileTree({
           >
             <span
               style={{
-                width: "8px",
-                height: "8px",
+                width: "6px",
+                height: "6px",
                 borderRadius: "999px",
                 background: "#007acc",
-                boxShadow: "0 0 0 3px rgba(0,122,204,0.14)",
                 flexShrink: 0,
-                marginTop: "5px",
+                marginTop: "4px",
               }}
             />
             <span style={{ flex: 1, minWidth: 0 }}>
@@ -250,6 +249,7 @@ function FileTree({
                   color: "#d4d4d4",
                   fontSize: "12px",
                   fontWeight: 600,
+                  letterSpacing: "0.01em",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -260,9 +260,9 @@ function FileTree({
               <span
                 style={{
                   display: "block",
-                  marginTop: "3px",
-                  color: "#858585",
-                  fontSize: "11px",
+                  marginTop: "2px",
+                  color: "#6f7680",
+                  fontSize: "10px",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -273,7 +273,7 @@ function FileTree({
             </span>
             <span
               style={{
-                color: "#858585",
+                color: "#6f7680",
                 fontSize: "10px",
                 transform: workspaceMenuOpen ? "rotate(180deg)" : "none",
                 transition: "transform 120ms ease",
@@ -306,10 +306,10 @@ function FileTree({
 
         <div
           style={{
-            marginTop: "12px",
-            color: "#858585",
+            marginTop: "10px",
+            color: "#707782",
             fontSize: "10px",
-            letterSpacing: "0.08em",
+            letterSpacing: "0.12em",
             textTransform: "uppercase",
             fontWeight: 700,
           }}
@@ -404,7 +404,7 @@ function FileTree({
         ) : null}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 0 10px" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 0 10px", background: "#171a1f" }}>
         {isCreating ? (
           <InlineRow meta={getFileMeta(createName || "new.py")}>
             <input
@@ -436,9 +436,9 @@ function FileTree({
         ) : null}
 
         {orderedFiles.length === 0 && !isCreating ? (
-          <div style={{ padding: "18px 12px", color: "#858585", fontSize: "12px", lineHeight: 1.55 }}>
+          <div style={{ padding: "18px 12px", color: "#7b838e", fontSize: "12px", lineHeight: 1.55 }}>
             No files in this workspace yet.
-            <div style={{ marginTop: "6px", color: "#6f6f73", fontSize: "11px" }}>
+            <div style={{ marginTop: "6px", color: "#656b75", fontSize: "11px" }}>
               Use the plus button to create a file.
             </div>
           </div>
@@ -555,11 +555,11 @@ function FileItem({
         gap: "8px",
         padding: "0 8px 0 10px",
         margin: "0 6px",
-        background: isActive ? "#37373d" : isHovered ? "#2a2d2e" : "transparent",
+        background: isActive ? "#20252d" : isHovered ? "#1b2027" : "transparent",
         color: isActive ? "#ffffff" : "#d4d4d4",
         cursor: disabled ? "default" : "pointer",
-        borderRadius: "4px",
-        boxShadow: isActive ? "inset 2px 0 0 #007acc, inset 0 0 0 1px rgba(255,255,255,0.04)" : "none",
+        borderRadius: "3px",
+        boxShadow: isActive ? "inset 2px 0 0 #007acc" : "none",
       }}
     >
       <FileGlyph meta={meta} />
@@ -591,6 +591,7 @@ function FileItem({
               fontFamily: '"Cascadia Code", Consolas, monospace',
               fontSize: "12px",
               lineHeight: 1,
+              color: isActive ? "#ffffff" : "#c5ccd4",
             }}
             title={file.name}
           >
@@ -665,7 +666,7 @@ function FileGlyph({ meta }) {
       style={{
         width: "18px",
         height: "18px",
-        borderRadius: "5px",
+        borderRadius: "4px",
         display: "grid",
         placeItems: "center",
         background: meta.surface,
@@ -674,7 +675,7 @@ function FileGlyph({ meta }) {
         fontWeight: 700,
         letterSpacing: "0.03em",
         flexShrink: 0,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
       }}
       aria-hidden="true"
     >
@@ -704,17 +705,17 @@ function getFileMeta(filename) {
 
   switch (extension) {
     case "py":
-      return { label: "PY", accent: "#4ec9b0", surface: "rgba(78, 201, 176, 0.16)" };
+      return { label: "PY", accent: "#7bc4ae", surface: "rgba(123, 196, 174, 0.12)" };
     case "js":
-      return { label: "JS", accent: "#dcdcaa", surface: "rgba(220, 220, 170, 0.16)" };
+      return { label: "JS", accent: "#d6c472", surface: "rgba(214, 196, 114, 0.12)" };
     case "ts":
-      return { label: "TS", accent: "#4fc1ff", surface: "rgba(79, 193, 255, 0.16)" };
+      return { label: "TS", accent: "#7eb5ff", surface: "rgba(126, 181, 255, 0.12)" };
     case "sql":
-      return { label: "SQL", accent: "#c586c0", surface: "rgba(197, 134, 192, 0.16)" };
+      return { label: "SQL", accent: "#b790d7", surface: "rgba(183, 144, 215, 0.12)" };
     case "pg":
-      return { label: "PG", accent: "#9cdcfe", surface: "rgba(156, 220, 254, 0.16)" };
+      return { label: "PG", accent: "#83b7d6", surface: "rgba(131, 183, 214, 0.12)" };
     default:
-      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.16)" };
+      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.1)" };
   }
 }
 
@@ -730,11 +731,11 @@ function getContextMenuStyle(contextMenu) {
     top: `${top}px`,
     minWidth: "160px",
     border: "1px solid rgba(30,30,30,0.95)",
-    background: "linear-gradient(180deg, #2c2c2e 0%, #232326 100%)",
-    boxShadow: "0 18px 34px rgba(0, 0, 0, 0.38)",
+    background: "#1e232a",
+    boxShadow: "0 18px 34px rgba(0, 0, 0, 0.42)",
     zIndex: 40,
     padding: "6px 0",
-    borderRadius: "8px",
+    borderRadius: "6px",
   };
 }
 
@@ -743,7 +744,7 @@ const menuSectionLabelStyle = {
   fontSize: "10px",
   fontWeight: 700,
   textTransform: "uppercase",
-  letterSpacing: "0.08em",
+  letterSpacing: "0.12em",
   marginBottom: "8px",
 };
 
@@ -766,11 +767,11 @@ const workspaceMenuStyle = {
   left: "8px",
   right: "8px",
   border: "1px solid rgba(30,30,30,0.95)",
-  background: "linear-gradient(180deg, #2c2c2e 0%, #232326 100%)",
-  boxShadow: "0 18px 34px rgba(0, 0, 0, 0.38)",
+  background: "#1e232a",
+  boxShadow: "0 18px 34px rgba(0, 0, 0, 0.42)",
   padding: "10px",
   zIndex: 30,
-  borderRadius: "10px",
+  borderRadius: "8px",
 };
 
 const workspaceInputStyle = {
@@ -788,14 +789,13 @@ const workspaceInputStyle = {
 function workspaceCreateButtonStyle(disabled = false) {
   return {
     border: "none",
-    background: disabled ? "#2a2d2e" : "linear-gradient(180deg, #0f74b6 0%, #0e639c 100%)",
+    background: disabled ? "#2a2d2e" : "#0e639c",
     color: "#ffffff",
     padding: "0 10px",
     fontSize: "12px",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.7 : 1,
-    borderRadius: "6px",
-    boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,0.12)",
+    borderRadius: "4px",
   };
 }
 
@@ -806,7 +806,7 @@ function workspaceToggleButtonStyle(disabled = false) {
     border: "none",
     background: "transparent",
     color: "#d4d4d4",
-    padding: 0,
+    padding: "2px 0 4px",
     textAlign: "left",
     display: "flex",
     alignItems: "flex-start",
@@ -819,7 +819,7 @@ function workspaceMenuItemStyle(active = false) {
   return {
     height: "28px",
     border: "1px solid transparent",
-    background: active ? "#37373d" : "transparent",
+    background: active ? "#20252d" : "transparent",
     color: active ? "#ffffff" : "#d4d4d4",
     textAlign: "left",
     padding: "0 8px",
@@ -837,14 +837,13 @@ function headerIconButtonStyle(disabled = false) {
     width: "24px",
     height: "24px",
     border: "1px solid rgba(255,255,255,0.05)",
-    background: "rgba(255,255,255,0.03)",
+    background: "rgba(255,255,255,0.02)",
     color: disabled ? "#5f5f5f" : "#bbbbbb",
     cursor: disabled ? "default" : "pointer",
     fontSize: "16px",
     lineHeight: 1,
     padding: 0,
-    borderRadius: "6px",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+    borderRadius: "4px",
     flexShrink: 0,
   };
 }
@@ -854,13 +853,13 @@ function fileActionButtonStyle(visible = false) {
     width: "20px",
     height: "20px",
     border: "none",
-    background: visible ? "rgba(255,255,255,0.04)" : "transparent",
+    background: visible ? "rgba(255,255,255,0.03)" : "transparent",
     color: "#858585",
     cursor: "pointer",
     opacity: visible ? 1 : 0,
     transition: "opacity 120ms ease, background 120ms ease",
     flexShrink: 0,
-    borderRadius: "4px",
+    borderRadius: "3px",
   };
 }
 

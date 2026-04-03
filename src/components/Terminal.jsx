@@ -236,9 +236,7 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
     fitAddonRef.current = fitAddon
     lastDimensionsRef.current = { cols: xterm.cols, rows: xterm.rows }
 
-    xterm.writeln('\x1b[1;34m========================================\x1b[0m')
-    xterm.writeln('\x1b[1;34m|  \x1b[1;37mWasmForge\x1b[0m\x1b[1;34m - Browser IDE           |\x1b[0m')
-    xterm.writeln('\x1b[1;34m========================================\x1b[0m')
+    xterm.writeln('\x1b[90mWasmForge local runtime\x1b[0m')
     xterm.writeln('\x1b[90mPreparing local execution environments...\x1b[0m')
     xterm.writeln('')
     fitTimeoutRef.current = setTimeout(() => {
@@ -353,8 +351,8 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
       style={{
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(180deg, #181a1f 0%, #10141b 100%)',
-        padding: '10px 14px',
+        background: '#0f1318',
+        padding: '8px 10px',
         boxSizing: 'border-box',
         borderRadius: 0,
       }}

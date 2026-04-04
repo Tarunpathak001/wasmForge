@@ -17,7 +17,7 @@ import {
 } from "./utils/sqlRuntime.js";
 
 const DEFAULT_FILENAME = "main.py";
-const DEFAULT_WORKSPACE_NAME = "python-experiments";
+const DEFAULT_WORKSPACE_NAME = "local-workspace";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "wasmforge:active-workspace";
 const RECOVERY_STORAGE_KEY_PREFIX = "wasmforge:pending-workspace-writes";
 const MOBILE_LAYOUT_BREAKPOINT = 960;
@@ -26,15 +26,15 @@ const DEFAULT_SIDEBAR_WIDTH = 280;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
 const SIDEBAR_RESIZE_HANDLE_WIDTH = 6;
-const TOP_HEADER_HEIGHT = 60;
-const STATUS_BAR_HEIGHT = 22;
-const BOTTOM_TABBAR_HEIGHT = 35;
+const TOP_HEADER_HEIGHT = 64;
+const STATUS_BAR_HEIGHT = 24;
+const BOTTOM_TABBAR_HEIGHT = 38;
 const EDITOR_SPLIT_HANDLE_HEIGHT = 6;
-const MOBILE_TOPBAR_HEIGHT = 56;
-const MOBILE_TABBAR_HEIGHT = 40;
-const MOBILE_NAV_HEIGHT = 72;
-const MOBILE_STATUS_HEIGHT = 22;
-const MOBILE_DOCKED_PANEL_HEIGHT = 220;
+const MOBILE_TOPBAR_HEIGHT = 58;
+const MOBILE_TABBAR_HEIGHT = 44;
+const MOBILE_NAV_HEIGHT = 76;
+const MOBILE_STATUS_HEIGHT = 24;
+const MOBILE_DOCKED_PANEL_HEIGHT = 228;
 const MIN_EDITOR_PANEL_HEIGHT = 220;
 const MIN_TERMINAL_PANEL_HEIGHT = 160;
 const DEFAULT_EDITOR_RATIO = 0.65;
@@ -182,21 +182,6 @@ function persistRecoveryEntries(workspaceName, entries) {
   window.localStorage.setItem(storageKey, JSON.stringify(entries));
 }
 
-function getRuntimePresentation(runtime) {
-  switch (runtime) {
-    case "python":
-      return { label: "Python", accent: "#9ac7ab", bg: "rgba(25, 42, 33, 0.82)", border: "rgba(84, 112, 94, 0.34)" };
-    case "javascript":
-      return { label: "JS", accent: "#d3bc86", bg: "rgba(50, 40, 18, 0.82)", border: "rgba(115, 96, 55, 0.34)" };
-    case "sqlite":
-      return { label: "SQL", accent: "#9cb8d5", bg: "rgba(22, 34, 48, 0.84)", border: "rgba(87, 108, 132, 0.34)" };
-    case "pglite":
-      return { label: "SQL", accent: "#9cc7b0", bg: "rgba(20, 37, 29, 0.84)", border: "rgba(84, 110, 94, 0.34)" };
-    default:
-      return { label: "Text", accent: "#a5afbb", bg: "rgba(26, 32, 41, 0.86)", border: "rgba(104, 115, 129, 0.3)" };
-  }
-}
-
 function clampEditorPaneHeight(height, containerHeight) {
   if (!containerHeight) {
     return height;
@@ -229,21 +214,21 @@ function getStatusBarTone(activeRuntime, activeStatusMessage, activeRuntimeRunni
     return "#f48771";
   }
   if (activeRuntime === "python" && isAwaitingInput) {
-    return "#dcdcaa";
+    return "#e8c872";
   }
   if (activeRuntimeRunning) {
-    return "#d7ba7d";
+    return "#b48aea";
   }
   if (activeRuntimeReady) {
-    return "#3fb950";
+    return "#7dd8b0";
   }
   if (!activeStatusMessage) {
-    return "#858585";
+    return "#8b8b96";
   }
-  return "#858585";
+  return "#8b8b96";
 }
 
-export default function App() {
+export default function App({ onNavigateHome }) {
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(DEFAULT_FILENAME);
   const [openFiles, setOpenFiles] = useState([]);
@@ -272,6 +257,19 @@ export default function App() {
   const activeFileRef = useRef(DEFAULT_FILENAME);
   const activeWorkspaceRef = useRef(activeWorkspace);
   const recoveryWritesRef = useRef(readRecoveryEntries(activeWorkspace));
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    document.body.dataset.page = "ide";
+    return () => {
+      if (document.body.dataset.page === "ide") {
+        delete document.body.dataset.page;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     activeFileRef.current = activeFile;
@@ -1359,13 +1357,16 @@ export default function App() {
         ? isJsRunning
         : isSqlRunning && runningEngine === activeRuntime;
   const isAnyRuntimeBusy = isRunning || isJsRunning || isSqlRunning;
+  const activeJsExtension = getFileExtension(activeFile);
   const activeStatusMessage =
     activeRuntime === "sqlite"
       ? sqliteStatus
       : activeRuntime === "pglite"
         ? pgliteStatus
         : activeRuntime === "javascript"
-          ? jsStatus
+          ? activeJsExtension === "ts" && jsStatus === "JavaScript ready"
+            ? "TypeScript ready"
+            : jsStatus
           : activeRuntime === "unknown"
             ? files.length === 0
               ? "Create a file to begin"
@@ -1462,6 +1463,7 @@ export default function App() {
       : { flex: `0 0 ${editorPaneHeight}px` };
   const runButtonDisabled = isAnyRuntimeBusy || activeRuntime === "unknown" || !activeRuntimeReady;
   const desktopNavWidth = ACTIVITY_BAR_WIDTH + sidebarWidth;
+  const sidebarModeLabel = sidebarMode === "search" ? "Search" : "Explorer";
   const mobileNavMode =
     mobilePane === "files"
       ? (sidebarMode === "search" ? "search" : "explorer")
@@ -1498,7 +1500,7 @@ export default function App() {
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
-        background: "#1e1e1e",
+        background: "#09090b",
       }}
     >
       {files.length === 0 ? (
@@ -1515,7 +1517,7 @@ export default function App() {
                 placeItems: "center",
                 color: "#858585",
                 fontSize: "13px",
-                background: "#1e1e1e",
+                background: "#09090b",
               }}
             >
               Loading editor...
@@ -1543,7 +1545,7 @@ export default function App() {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        background: "#14171c",
+        background: "linear-gradient(180deg, #111114 0%, #09090b 100%)",
       }}
     >
       <div
@@ -1552,18 +1554,44 @@ export default function App() {
           display: "flex",
           alignItems: "stretch",
           justifyContent: "space-between",
-          borderBottom: "1px solid rgba(255,255,255,0.04)",
-          background: "#1a1c21",
+          borderBottom: "1px solid #2a2a32",
+          background: "#111114",
+          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.02)",
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "stretch" }}>
+        <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
           <BottomPanelTab active={bottomPanelMode === "terminal"} onClick={() => setBottomPanelMode("terminal")}>
             TERMINAL
           </BottomPanelTab>
           <BottomPanelTab active={bottomPanelMode === "output"} onClick={() => setBottomPanelMode("output")}>
             OUTPUT
           </BottomPanelTab>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              paddingLeft: "4px",
+              minWidth: 0,
+            }}
+          >
+            <span style={{ color: "#8b8b96", fontSize: "10px", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+              Runtime
+            </span>
+            <span
+              style={{
+                color: "#ececef",
+                fontSize: "11px",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {currentLanguageLabel}
+            </span>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "0 12px" }}>
@@ -1577,18 +1605,24 @@ export default function App() {
               terminalRef.current?.clear?.();
             }}
             style={terminalActionButtonStyle()}
+            className="wf-terminal-action"
           >
             Clear
           </button>
           {canKillActiveRuntime && activeRuntimeRunning ? (
-            <button type="button" onClick={handleKill} style={terminalActionButtonStyle({ color: "#f48771" })}>
+            <button
+              type="button"
+              onClick={handleKill}
+              style={terminalActionButtonStyle({ color: "#f48771", border: "rgba(244, 135, 113, 0.18)" })}
+              className="wf-terminal-action"
+            >
               Kill
             </button>
           ) : null}
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#111317" }}>
+      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#09090b" }}>
         <div style={{ display: terminalVisible ? "block" : "none", height: "100%" }}>
           <Terminal ref={terminalRef} isVisible={terminalVisible} />
         </div>
@@ -1613,17 +1647,21 @@ export default function App() {
 
   return (
     <div
+      className="wasmforge-shell"
       style={{
         minHeight: "100dvh",
         height: "100dvh",
         overflow: "hidden",
-        background: "#111317",
-        color: "#d4d4d4",
-        fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
+        position: "relative",
+        background: "#09090b",
+        color: "#ececef",
+        fontFamily: '"Instrument Sans", "Segoe UI Variable Text", "Segoe UI", sans-serif',
         display: "flex",
         flexDirection: "column",
       }}
     >
+      <WasmForgeShellGlobalStyles />
+
       {!isMobileLayout ? (
         <div
           style={{
@@ -1631,8 +1669,10 @@ export default function App() {
             minHeight: `${TOP_HEADER_HEIGHT}px`,
             display: "flex",
             flexDirection: "column",
-            background: "#1a1c21",
-            borderBottom: "1px solid #111317",
+            position: "relative",
+            zIndex: 1,
+            background: "#111114",
+            borderBottom: "1px solid #2a2a32",
           }}
         >
           <div
@@ -1640,20 +1680,35 @@ export default function App() {
               display: "flex",
               alignItems: "center",
               gap: "12px",
-              height: "28px",
-              minHeight: "28px",
-              padding: "0 12px",
-              borderBottom: "1px solid rgba(255,255,255,0.04)",
-              background: "#1b1d22",
+              height: "32px",
+              minHeight: "32px",
+              padding: "0 14px",
+              borderBottom: "1px solid #2a2a32",
+              background: "#111114",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => onNavigateHome?.()}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                minWidth: 0,
+                flexShrink: 0,
+                border: "none",
+                padding: 0,
+                margin: 0,
+                background: "transparent",
+                cursor: onNavigateHome ? "pointer" : "default",
+                color: "inherit",
+              }}
+            >
               <LogoMark />
-              <div style={{ color: "#ffffff", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}>WasmForge</div>
-              <div style={{ color: "#6e7681", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-                Local IDE
+              <div style={{ color: "#ececef", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", letterSpacing: "0.01em" }}>
+                WasmForge
               </div>
-            </div>
+            </button>
 
             <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", padding: "0 8px" }}>
               <ToolbarSearch
@@ -1666,11 +1721,12 @@ export default function App() {
               />
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#666d76", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em", flexShrink: 0 }}>
-              <span>Project</span>
-              <span style={{ color: "#1997ff", fontWeight: 700, letterSpacing: "0.04em", textTransform: "none", fontSize: "11px", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0, color: "#8b8b96", fontSize: "11px" }}>
+              <span style={{ color: "#ececef", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {activeWorkspace}
               </span>
+              <span style={{ width: "1px", height: "12px", background: "#3a3a44", flexShrink: 0 }} />
+              <span>{currentLanguageLabel}</span>
             </div>
           </div>
 
@@ -1678,18 +1734,31 @@ export default function App() {
             style={{
               display: "flex",
               alignItems: "stretch",
-              minHeight: "31px",
-              background: "#1a1c21",
+              minHeight: "32px",
+              background: "#18181c",
             }}
           >
             <div
               style={{
                 width: `${desktopNavWidth}px`,
                 minWidth: `${desktopNavWidth}px`,
-                borderRight: "1px solid rgba(255,255,255,0.04)",
-                background: "#1a1c21",
+                borderRight: "1px solid #2a2a32",
+                background: "#18181c",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "0 14px",
+                color: "#8b8b96",
+                fontSize: "11px",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
               }}
-            />
+            >
+              <span style={{ color: "#ececef", fontWeight: 700 }}>{sidebarModeLabel}</span>
+              <span style={{ width: "4px", height: "10px", borderRadius: "1px", background: "#48367a", flexShrink: 0 }} />
+              <span>{files.length} file{files.length === 1 ? "" : "s"}</span>
+            </div>
 
             <div
               style={{
@@ -1699,10 +1768,11 @@ export default function App() {
                 alignItems: "stretch",
                 overflowX: "auto",
                 scrollbarWidth: "thin",
+                background: "#18181c",
               }}
             >
               {fileTabs.length === 0 ? (
-                <div style={{ padding: "0 12px", color: "#737b86", fontSize: "12px", display: "flex", alignItems: "center" }}>
+                <div style={{ padding: "0 12px", color: "#8b8b96", fontSize: "12px", display: "flex", alignItems: "center" }}>
                   No file selected
                 </div>
               ) : (
@@ -1727,11 +1797,17 @@ export default function App() {
                 justifyContent: "flex-end",
                 padding: "0 12px",
                 flexShrink: 0,
-                borderLeft: "1px solid rgba(255,255,255,0.04)",
-                background: "#1a1c21",
+                borderLeft: "1px solid #2a2a32",
+                background: "#18181c",
               }}
             >
-              <button type="button" onClick={handleRun} disabled={runButtonDisabled} style={runButtonStyle(runButtonDisabled)}>
+              <button
+                type="button"
+                onClick={handleRun}
+                disabled={runButtonDisabled}
+                style={runButtonStyle(runButtonDisabled)}
+                className="wf-run-btn"
+              >
                 ▶ Run
               </button>
             </div>
@@ -1740,7 +1816,7 @@ export default function App() {
       ) : null}
 
       {isMobileLayout ? (
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "#111317" }}>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "#09090b", position: "relative", zIndex: 1 }}>
           <div
             style={{
               height: `${MOBILE_TOPBAR_HEIGHT}px`,
@@ -1749,8 +1825,8 @@ export default function App() {
               alignItems: "center",
               gap: "12px",
               padding: "0 14px",
-              background: "#14181f",
-              borderBottom: "1px solid rgba(255,255,255,0.04)",
+              background: "#111114",
+              borderBottom: "1px solid #2a2a32",
               flexShrink: 0,
             }}
           >
@@ -1770,17 +1846,31 @@ export default function App() {
               <MenuIcon />
             </button>
 
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <button
+              type="button"
+              onClick={() => onNavigateHome?.()}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                border: "none",
+                padding: 0,
+                margin: 0,
+                background: "transparent",
+                cursor: onNavigateHome ? "pointer" : "default",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
               <div style={{ display: "flex", alignItems: "center", gap: "9px", minWidth: 0 }}>
                 <LogoMark />
-                <div style={{ color: "#7ee0da", fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em" }}>
+                <div style={{ color: "#ececef", fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em" }}>
                   WasmForge
                 </div>
               </div>
               <div
                 style={{
                   marginTop: "4px",
-                  color: "#b8bec6",
+                  color: "#c4c4cc",
                   fontSize: "12px",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
@@ -1788,9 +1878,9 @@ export default function App() {
                 }}
               >
                 {mobileHeaderTitle}
-                <span style={{ color: "#6d7480" }}> — {activeWorkspace}</span>
+                <span style={{ color: "#8b8b96" }}> — {activeWorkspace}</span>
               </div>
-            </div>
+            </button>
 
             <div style={mobileSignalChipStyle(statusBarTone)}>
               <StatusPulseIcon tone={statusBarTone} />
@@ -1804,14 +1894,14 @@ export default function App() {
               display: "flex",
               alignItems: "stretch",
               overflowX: "auto",
-              background: "#161a21",
-              borderBottom: "1px solid rgba(255,255,255,0.04)",
+              background: "#18181c",
+              borderBottom: "1px solid #2a2a32",
               flexShrink: 0,
               scrollbarWidth: "none",
             }}
           >
             {fileTabs.length === 0 ? (
-              <div style={{ padding: "0 14px", display: "flex", alignItems: "center", color: "#6f7680", fontSize: "12px" }}>
+              <div style={{ padding: "0 14px", display: "flex", alignItems: "center", color: "#8b8b96", fontSize: "12px" }}>
                 Open a file from the explorer to begin
               </div>
             ) : (
@@ -1835,14 +1925,14 @@ export default function App() {
             ) : mobilePane === "output" ? (
               <div style={{ height: "100%" }}>{outputPanel}</div>
             ) : (
-              <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#111317" }}>
+              <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#09090b" }}>
                 <div style={{ flex: 1, minHeight: 0 }}>{editorPanel}</div>
                 <div
                   style={{
                     flex: `0 0 ${MOBILE_DOCKED_PANEL_HEIGHT}px`,
                     minHeight: "180px",
-                    borderTop: "1px solid rgba(255,255,255,0.04)",
-                    background: "#14171c",
+                    borderTop: "1px solid #2a2a32",
+                    background: "#09090b",
                   }}
                 >
                   {outputPanel}
@@ -1852,15 +1942,16 @@ export default function App() {
 
             {mobilePane !== "files" ? (
               <button
-                type="button"
-                aria-label="Run current file"
-                onClick={handleRun}
-                disabled={runButtonDisabled}
-                style={mobileRunButtonStyle(runButtonDisabled)}
-              >
-                <PlayIcon />
-              </button>
-            ) : null}
+              type="button"
+              aria-label="Run current file"
+              onClick={handleRun}
+              disabled={runButtonDisabled}
+              style={mobileRunButtonStyle(runButtonDisabled)}
+              className="wf-fab"
+            >
+              <PlayIcon />
+            </button>
+          ) : null}
           </div>
 
           <div
@@ -1872,19 +1963,19 @@ export default function App() {
               justifyContent: "space-between",
               gap: "10px",
               padding: "0 10px",
-              background: "#007acc",
-              color: "#ffffff",
+              background: "#18181c",
+              color: "#ececef",
               fontSize: "11px",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
+              borderTop: "1px solid #2a2a32",
               flexShrink: 0,
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0, flex: 1 }}>
               <span
                 style={{
-                  width: "7px",
-                  height: "7px",
-                  borderRadius: "999px",
+                  width: "8px",
+                  height: "2px",
+                  borderRadius: "1px",
                   background: statusBarTone,
                   flexShrink: 0,
                 }}
@@ -1907,8 +1998,8 @@ export default function App() {
               gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
               gap: "8px",
               padding: "8px 10px 10px",
-              background: "#151920",
-              borderTop: "1px solid rgba(255,255,255,0.04)",
+              background: "#111114",
+              borderTop: "1px solid #2a2a32",
               flexShrink: 0,
             }}
           >
@@ -1952,32 +2043,36 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div ref={desktopLayoutRef} style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        <div ref={desktopLayoutRef} style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", position: "relative", zIndex: 1 }}>
           <div
             style={{
               width: `${ACTIVITY_BAR_WIDTH}px`,
-              background: "#17191d",
-              borderRight: "1px solid rgba(255,255,255,0.04)",
+              background: "#111114",
+              borderRight: "1px solid #2a2a32",
               display: "flex",
               flexDirection: "column",
               alignItems: "stretch",
+              justifyContent: "flex-start",
               paddingTop: "10px",
+              paddingBottom: "10px",
               flexShrink: 0,
             }}
           >
-            <ActivityButton active={sidebarMode === "explorer"} title="Explorer" onClick={() => setSidebarMode("explorer")}>
-              <ExplorerIcon />
-            </ActivityButton>
-            <ActivityButton active={sidebarMode === "search"} title="Search" onClick={() => setSidebarMode("search")}>
-              <SearchIcon />
-            </ActivityButton>
+            <div>
+              <ActivityButton active={sidebarMode === "explorer"} title="Explorer" onClick={() => setSidebarMode("explorer")}>
+                <ExplorerIcon />
+              </ActivityButton>
+              <ActivityButton active={sidebarMode === "search"} title="Search" onClick={() => setSidebarMode("search")}>
+                <SearchIcon />
+              </ActivityButton>
+            </div>
           </div>
 
           <div
             style={{
               width: `${sidebarWidth}px`,
-              background: "#17191d",
-              borderRight: "1px solid rgba(255,255,255,0.04)",
+              background: "#111114",
+              borderRight: "1px solid #2a2a32",
               minWidth: 0,
               flexShrink: 0,
             }}
@@ -1988,12 +2083,42 @@ export default function App() {
           <VerticalResizeHandle onPointerDown={startResize("sidebar")} />
 
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <div ref={shellBodyRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <div style={{ ...editorPaneStyle, minHeight: MIN_EDITOR_PANEL_HEIGHT, minWidth: 0 }}>
+            <div
+              ref={shellBodyRef}
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                padding: "10px 12px 10px 10px",
+                background: "#09090b",
+              }}
+            >
+              <div
+                style={{
+                  ...editorPaneStyle,
+                  minHeight: MIN_EDITOR_PANEL_HEIGHT,
+                  minWidth: 0,
+                  borderRadius: "4px",
+                  overflow: "hidden",
+                  border: "1px solid #2a2a32",
+                  boxShadow: "none",
+                }}
+              >
                 {editorPanel}
               </div>
               <HorizontalResizeHandle onPointerDown={startResize("editor-terminal")} />
-              <div style={{ flex: 1, minHeight: MIN_TERMINAL_PANEL_HEIGHT, minWidth: 0 }}>
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: MIN_TERMINAL_PANEL_HEIGHT,
+                  minWidth: 0,
+                  borderRadius: "4px",
+                  overflow: "hidden",
+                  border: "1px solid #2a2a32",
+                  boxShadow: "none",
+                }}
+              >
                 {outputPanel}
               </div>
             </div>
@@ -2011,10 +2136,12 @@ export default function App() {
             justifyContent: "space-between",
             gap: "12px",
             padding: "0 10px",
-            background: "#007acc",
-            color: "#ffffff",
+            position: "relative",
+            zIndex: 1,
+            background: "#18181c",
+            color: "#ececef",
             fontSize: "12px",
-            borderTop: "1px solid rgba(255,255,255,0.1)",
+            borderTop: "1px solid #2a2a32",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
@@ -2026,8 +2153,8 @@ export default function App() {
               <span
                 style={{
                   width: "8px",
-                  height: "8px",
-                  borderRadius: "999px",
+                  height: "2px",
+                  borderRadius: "1px",
                   background: statusBarTone,
                   flexShrink: 0,
                 }}
@@ -2052,17 +2179,18 @@ export default function App() {
 function HorizontalResizeHandle({ onPointerDown }) {
   return (
     <div
+      className="wf-horizontal-handle"
       onPointerDown={onPointerDown}
       style={{
         height: `${EDITOR_SPLIT_HANDLE_HEIGHT}px`,
         flexShrink: 0,
         cursor: "row-resize",
-        background: "#15181d",
+        background: "transparent",
         display: "grid",
         placeItems: "center",
       }}
     >
-      <div style={{ width: "48px", height: "1px", background: "#2a2f36" }} />
+      <div style={{ width: "54px", height: "1px", background: "rgba(58, 58, 68, 0.92)" }} />
     </div>
   );
 }
@@ -2070,12 +2198,13 @@ function HorizontalResizeHandle({ onPointerDown }) {
 function VerticalResizeHandle({ onPointerDown }) {
   return (
     <div
+      className="wf-vertical-handle"
       onPointerDown={onPointerDown}
       style={{
         width: `${SIDEBAR_RESIZE_HANDLE_WIDTH}px`,
         flexShrink: 0,
         cursor: "col-resize",
-        background: "#15181d",
+        background: "transparent",
         position: "relative",
       }}
     >
@@ -2087,7 +2216,7 @@ function VerticalResizeHandle({ onPointerDown }) {
           left: "50%",
           width: "1px",
           transform: "translateX(-50%)",
-          background: "rgba(255,255,255,0.05)",
+          background: "rgba(58, 58, 68, 0.92)",
         }}
       />
     </div>
@@ -2097,16 +2226,18 @@ function VerticalResizeHandle({ onPointerDown }) {
 function ActivityButton({ active = false, children, disabled = false, title, onClick }) {
   return (
     <button
+      className="wf-activity-btn"
       type="button"
       title={title}
       disabled={disabled}
       onClick={onClick}
       style={{
-        height: "40px",
+        width: "100%",
+        height: "42px",
         border: "none",
-        borderLeft: `2px solid ${active ? "#007acc" : "transparent"}`,
-        background: active ? "rgba(255,255,255,0.03)" : "transparent",
-        color: active ? "#ffffff" : "#858585",
+        borderLeft: `2px solid ${active ? "#b48aea" : "transparent"}`,
+        background: active ? "rgba(180, 138, 234, 0.1)" : "transparent",
+        color: active ? "#f5fbff" : "#7e8794",
         display: "grid",
         placeItems: "center",
         cursor: disabled ? "default" : "pointer",
@@ -2122,18 +2253,19 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
   const visual = getFileVisualMeta(filename);
   return (
     <button
+      className="wf-tab"
       type="button"
       onClick={onSelect}
       style={{
-        height: "31px",
-        minWidth: "124px",
-        maxWidth: "220px",
-        padding: "0 10px",
+        height: "32px",
+        minWidth: "132px",
+        maxWidth: "228px",
+        padding: "0 12px",
         border: "none",
-        borderTop: `1px solid ${active ? "#007acc" : "transparent"}`,
-        borderRight: "1px solid rgba(255,255,255,0.035)",
-        background: active ? "#1e2127" : "#1a1c21",
-        color: active ? "#ffffff" : "#b8bec6",
+        borderTop: `1px solid ${active ? "#b48aea" : "transparent"}`,
+        borderRight: "1px solid #2a2a32",
+        background: active ? "#18181c" : "#111114",
+        color: active ? "#ffffff" : "#a7b1bc",
         display: "flex",
         alignItems: "center",
         gap: "8px",
@@ -2143,8 +2275,8 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
     >
       <span
         style={{
-          width: "14px",
-          height: "14px",
+          width: "16px",
+          height: "16px",
           borderRadius: "3px",
           display: "grid",
           placeItems: "center",
@@ -2153,6 +2285,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           fontSize: "8px",
           fontWeight: 700,
           flexShrink: 0,
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
         }}
       >
         {visual.label}
@@ -2163,6 +2296,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           minWidth: 0,
           fontFamily: '"Cascadia Code", Consolas, monospace',
           fontSize: "12px",
+          fontWeight: active ? 700 : 600,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -2178,7 +2312,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           onClose();
         }}
         style={{
-          color: active ? "#9da3aa" : "#858585",
+          color: active ? "#9da3aa" : "#7b838d",
           fontSize: "12px",
           lineHeight: 1,
           width: "16px",
@@ -2186,7 +2320,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           display: "grid",
           placeItems: "center",
           borderRadius: "3px",
-          background: active ? "rgba(255,255,255,0.03)" : "transparent",
+          background: active ? "rgba(255,255,255,0.04)" : "transparent",
         }}
       >
         ×
@@ -2198,17 +2332,18 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
 function BottomPanelTab({ active = false, children, onClick }) {
   return (
     <button
+      className="wf-panel-tab"
       type="button"
       onClick={onClick}
       style={{
         border: "none",
-        borderBottom: `1px solid ${active ? "#007acc" : "transparent"}`,
+        borderBottom: `1px solid ${active ? "#b48aea" : "transparent"}`,
         background: "transparent",
-        color: active ? "#ffffff" : "#858585",
-        padding: "0 14px",
+        color: active ? "#ffffff" : "#77818d",
+        padding: "0 15px",
         fontSize: "11px",
         fontWeight: 600,
-        letterSpacing: "0.08em",
+        letterSpacing: "0.12em",
         cursor: "pointer",
       }}
     >
@@ -2221,6 +2356,7 @@ function MobileHeaderTab({ active = false, filename, onSelect, onClose }) {
   const visual = getFileVisualMeta(filename);
   return (
     <button
+      className="wf-mobile-tab"
       type="button"
       onClick={onSelect}
       style={{
@@ -2229,9 +2365,9 @@ function MobileHeaderTab({ active = false, filename, onSelect, onClose }) {
         maxWidth: "186px",
         padding: "0 12px",
         border: "none",
-        borderTop: `2px solid ${active ? "#67e8dd" : "transparent"}`,
-        background: active ? "#11161d" : "#161a21",
-        color: active ? "#ffffff" : "#9ca3af",
+        borderTop: `2px solid ${active ? "#b48aea" : "transparent"}`,
+        background: active ? "#18181c" : "#111114",
+        color: active ? "#ffffff" : "#8e98a6",
         display: "flex",
         alignItems: "center",
         gap: "8px",
@@ -2295,20 +2431,22 @@ function MobileHeaderTab({ active = false, filename, onSelect, onClose }) {
 function MobileNavButton({ active = false, label, children, onClick }) {
   return (
     <button
+      className="wf-mobile-nav-btn"
       type="button"
       onClick={onClick}
       style={{
         border: "none",
-        background: active ? "rgba(103, 232, 221, 0.12)" : "transparent",
-        color: active ? "#67e8dd" : "#7f8894",
-        borderRadius: "14px",
+        background: active ? "rgba(180, 138, 234, 0.12)" : "transparent",
+        color: active ? "#ececef" : "#8b8b96",
+        borderRadius: "4px",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         gap: "6px",
         cursor: "pointer",
-        transition: "background 120ms ease, color 120ms ease",
+        transition: "background 160ms ease, color 160ms ease, transform 160ms ease",
+        boxShadow: active ? "inset 0 0 0 1px rgba(180, 138, 234, 0.14)" : "none",
       }}
     >
       <span
@@ -2338,10 +2476,10 @@ function mobileTopButtonStyle(active = false) {
   return {
     width: "36px",
     height: "36px",
-    border: "none",
-    background: active ? "rgba(103, 232, 221, 0.12)" : "rgba(255,255,255,0.03)",
-    color: active ? "#67e8dd" : "#d4d4d4",
-    borderRadius: "10px",
+    border: "1px solid #2a2a32",
+    background: active ? "rgba(180, 138, 234, 0.12)" : "#111114",
+    color: active ? "#ececef" : "#c4c4cc",
+    borderRadius: "4px",
     display: "grid",
     placeItems: "center",
     cursor: "pointer",
@@ -2351,11 +2489,11 @@ function mobileTopButtonStyle(active = false) {
 
 function mobileSignalChipStyle(tone) {
   return {
-    width: "36px",
-    height: "36px",
-    borderRadius: "12px",
-    background: "rgba(255,255,255,0.03)",
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
+    width: "28px",
+    height: "28px",
+    borderRadius: "4px",
+    background: "#111114",
+    border: "1px solid #2a2a32",
     display: "grid",
     placeItems: "center",
     color: tone,
@@ -2368,13 +2506,12 @@ function mobileRunButtonStyle(disabled = false) {
     position: "absolute",
     right: "16px",
     bottom: `calc(${MOBILE_NAV_HEIGHT + MOBILE_STATUS_HEIGHT}px + 14px)`,
-    width: "58px",
-    height: "58px",
-    border: "none",
-    borderRadius: "18px",
-    background: disabled ? "#24303a" : "linear-gradient(180deg, #168b80 0%, #106a63 100%)",
-    color: disabled ? "#6d7480" : "#7ef7ea",
-    boxShadow: disabled ? "none" : "0 16px 28px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.12)",
+    width: "52px",
+    height: "52px",
+    border: disabled ? "1px solid #3a3a44" : "1px solid rgba(180, 138, 234, 0.28)",
+    borderRadius: "4px",
+    background: disabled ? "#18181c" : "#b48aea",
+    color: disabled ? "#6d7480" : "#ffffff",
     display: "grid",
     placeItems: "center",
     cursor: disabled ? "not-allowed" : "pointer",
@@ -2386,19 +2523,19 @@ function LogoMark() {
   return (
     <div
       style={{
-        width: "18px",
-        height: "18px",
-        borderRadius: "4px",
+        width: "20px",
+        height: "20px",
+        borderRadius: "3px",
         display: "grid",
         placeItems: "center",
-        background: "linear-gradient(180deg, #0d8ef2 0%, #0068bf 100%)",
-        color: "#ffffff",
+        background: "linear-gradient(135deg, #b48aea 0%, #9a6dd4 100%)",
+        color: "#09090b",
         fontSize: "10px",
         fontWeight: 800,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18), 0 6px 12px rgba(0,122,204,0.24)",
+        border: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      W
+      <span style={{ letterSpacing: "-0.04em" }}>W</span>
     </div>
   );
 }
@@ -2406,18 +2543,19 @@ function LogoMark() {
 function ToolbarSearch({ value, onChange, onFocus }) {
   return (
     <label
+      className="wf-toolbar-search"
       style={{
         width: "100%",
-        maxWidth: "540px",
-        height: "26px",
+        maxWidth: "520px",
+        height: "30px",
         display: "flex",
         alignItems: "center",
         gap: "9px",
-        padding: "0 11px",
-        background: "#121419",
-        border: "1px solid rgba(255,255,255,0.06)",
-        color: "#7d8590",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
+        padding: "0 12px",
+        background: "#111114",
+        border: "1px solid #2a2a32",
+        borderRadius: "4px",
+        color: "#8b8b96",
       }}
     >
       <SearchIcon />
@@ -2425,7 +2563,7 @@ function ToolbarSearch({ value, onChange, onFocus }) {
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         onFocus={onFocus}
-        placeholder="Search workspace files"
+        placeholder="Search files"
         spellCheck={false}
         style={{
           flex: 1,
@@ -2435,6 +2573,7 @@ function ToolbarSearch({ value, onChange, onFocus }) {
           background: "transparent",
           color: "#d4d4d4",
           fontSize: "12px",
+          fontWeight: 500,
         }}
       />
     </label>
@@ -2486,11 +2625,11 @@ function TerminalIcon() {
   );
 }
 
-function StatusPulseIcon({ tone = "#3fb950" }) {
+function StatusPulseIcon({ tone = "#7dd8b0" }) {
   return (
     <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.2" opacity="0.35" />
-      <circle cx="8" cy="8" r="3" fill={tone} />
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.2" opacity="0.35" />
+      <rect x="5.25" y="5.25" width="5.5" height="5.5" rx="1.2" fill={tone} />
     </svg>
   );
 }
@@ -2504,14 +2643,13 @@ function PlayIcon() {
 }
 
 function OutputPlaceholder({ activeFile }) {
-  const visual = getFileVisualMeta(activeFile || "main.sql");
   return (
     <div
       style={{
         height: "100%",
         display: "grid",
         placeItems: "center",
-        background: "#121418",
+        background: "#09090b",
         color: "#858585",
         padding: "24px",
         textAlign: "center",
@@ -2520,29 +2658,21 @@ function OutputPlaceholder({ activeFile }) {
       <div style={{ maxWidth: "440px" }}>
         <div
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minWidth: "42px",
-            height: "18px",
-            padding: "0 8px",
-            borderRadius: "3px",
-            background: visual.surface,
-            color: visual.accent,
+            display: "inline-block",
+            color: "#8b8b96",
             fontSize: "10px",
             fontWeight: 700,
-            letterSpacing: "0.08em",
+            letterSpacing: "0.14em",
             textTransform: "uppercase",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.035)",
           }}
         >
-          {visual.label}
+          Output
         </div>
-        <div style={{ marginTop: "12px", color: "#d4d4d4", fontSize: "14px", fontWeight: 600 }}>
-          Output panel is idle
+        <div style={{ marginTop: "14px", color: "#ececef", fontSize: "16px", fontWeight: 700, letterSpacing: "0.01em" }}>
+          SQL results appear here
         </div>
-        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.65, color: "#7d8590" }}>
-          Run a SQL file such as {activeFile || "main.sql"} to populate this panel with query results.
+        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.7, color: "#8b8b96" }}>
+          Run a `.sql` or `.pg` file to inspect result sets and schema output in this panel.
         </div>
       </div>
     </div>
@@ -2557,76 +2687,62 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
         display: "grid",
         placeItems: "center",
         padding: isMobile ? "18px" : "24px",
-        background: "#17191d",
+        background: "#09090b",
       }}
     >
       <div
         style={{
           maxWidth: "420px",
           textAlign: "center",
-          padding: isMobile ? "20px" : "24px",
+          padding: isMobile ? "18px" : "20px",
         }}
       >
-        <div style={{ color: "#8b949e", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>
-          Explorer
+        <div style={{ color: "#8b8b96", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>
+          Workspace
         </div>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            marginTop: "12px",
-            padding: "4px 10px",
-            borderRadius: "3px",
-            background: "#1a1d22",
-            color: "#d4d4d4",
-            fontFamily: '"Cascadia Code", Consolas, monospace',
-            fontSize: "11px",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
-          }}
-        >
-          <span style={{ width: "7px", height: "7px", borderRadius: "999px", background: "#007acc", flexShrink: 0 }} />
+        <div style={{ marginTop: "10px", color: "#c4c4cc", fontFamily: '"Cascadia Code", Consolas, monospace', fontSize: "12px" }}>
           {workspaceName}
         </div>
         <div style={{ color: "#ffffff", fontSize: isMobile ? "18px" : "20px", fontWeight: 700, marginTop: "18px" }}>
-          {hasFiles ? "Pick a file to start editing" : "Create your first file"}
+          {hasFiles ? "Open a file to start editing" : "Create a file to begin"}
         </div>
-        <div style={{ color: "#7d8590", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
+        <div style={{ color: "#8b8b96", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
           {hasFiles
             ? "Select a file from the explorer to open it in the editor."
-            : "Create a file from the explorer to start working in this workspace."}
+            : "Use the explorer to create a file. Files and runtime data persist locally."}
         </div>
       </div>
     </div>
   );
 }
 
-function terminalActionButtonStyle({ color = "#d4d4d4" } = {}) {
+function terminalActionButtonStyle({ color = "#d4d4d4", border = "rgba(255,255,255,0.06)" } = {}) {
   return {
-    border: "none",
-    background: "transparent",
+    border: `1px solid ${border}`,
+    background: "#18181c",
     color,
     fontSize: "11px",
     cursor: "pointer",
-    padding: "0 2px",
-    letterSpacing: "0.03em",
+    padding: "5px 9px",
+    letterSpacing: "0.05em",
+    borderRadius: "3px",
+    fontWeight: 600,
   };
 }
 
 function runButtonStyle(disabled = false) {
   return {
     height: "28px",
-    border: disabled ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(0,122,204,0.48)",
-    borderRadius: "4px",
-    background: disabled ? "#1d2229" : "linear-gradient(180deg, #0e83e6 0%, #0069c2 100%)",
+    border: disabled ? "1px solid #3a3a44" : "1px solid rgba(180, 138, 234, 0.22)",
+    borderRadius: "3px",
+    background: disabled ? "#18181c" : "#b48aea",
     color: disabled ? "#7f8894" : "#ffffff",
-    padding: "0 12px",
+    padding: "0 14px",
     fontSize: "12px",
     fontWeight: 700,
-    letterSpacing: "0.04em",
+    letterSpacing: "0.05em",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.82 : 1,
-    boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,0.18), 0 10px 18px rgba(0,122,204,0.22)",
   };
 }
 
@@ -2634,10 +2750,11 @@ function statusBarTokenStyle() {
   return {
     display: "inline-flex",
     alignItems: "center",
-    gap: "6px",
+    gap: "7px",
     padding: 0,
     position: "relative",
     whiteSpace: "nowrap",
+    fontWeight: 500,
   };
 }
 
@@ -2645,24 +2762,128 @@ function statusBarDividerStyle() {
   return {
     width: "1px",
     height: "12px",
-    background: "rgba(255,255,255,0.28)",
+    background: "rgba(180,138,234,0.2)",
     flexShrink: 0,
   };
+}
+
+function WasmForgeShellGlobalStyles() {
+  return (
+    <style>
+      {`
+        @keyframes wfShellRise {
+          from {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .wasmforge-shell * {
+          box-sizing: border-box;
+        }
+
+        .wasmforge-shell ::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+
+        .wasmforge-shell ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .wasmforge-shell ::-webkit-scrollbar-thumb {
+          background: rgba(86, 86, 95, 0.38);
+          border-radius: 3px;
+          border: 2px solid transparent;
+          background-clip: padding-box;
+        }
+
+        .wasmforge-shell ::-webkit-scrollbar-thumb:hover {
+          background: rgba(139, 139, 150, 0.48);
+          background-clip: padding-box;
+        }
+
+        .wasmforge-shell .wf-activity-btn,
+        .wasmforge-shell .wf-tab,
+        .wasmforge-shell .wf-panel-tab,
+        .wasmforge-shell .wf-mobile-tab,
+        .wasmforge-shell .wf-mobile-nav-btn,
+        .wasmforge-shell .wf-run-btn,
+        .wasmforge-shell .wf-fab,
+        .wasmforge-shell .wf-terminal-action,
+        .wasmforge-shell .wf-toolbar-search,
+        .wasmforge-shell .wf-horizontal-handle,
+        .wasmforge-shell .wf-vertical-handle {
+          transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+        }
+
+        .wasmforge-shell .wf-tab,
+        .wasmforge-shell .wf-panel-tab,
+        .wasmforge-shell .wf-terminal-surface {
+          animation: wfShellRise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
+
+        .wasmforge-shell .wf-activity-btn:hover:not(:disabled),
+        .wasmforge-shell .wf-mobile-nav-btn:hover:not(:disabled),
+        .wasmforge-shell .wf-run-btn:hover:not(:disabled),
+        .wasmforge-shell .wf-fab:hover:not(:disabled),
+        .wasmforge-shell .wf-terminal-action:hover:not(:disabled) {
+          background: #222228;
+        }
+
+        .wasmforge-shell .wf-tab:hover,
+        .wasmforge-shell .wf-mobile-tab:hover {
+          background: #222228;
+        }
+
+        .wasmforge-shell .wf-panel-tab:hover,
+        .wasmforge-shell .wf-activity-btn:hover,
+        .wasmforge-shell .wf-mobile-nav-btn:hover,
+        .wasmforge-shell .wf-terminal-action:hover,
+        .wasmforge-shell .wf-toolbar-search:hover {
+          box-shadow: inset 0 0 0 1px rgba(180, 138, 234, 0.08);
+        }
+
+        .wasmforge-shell .wf-toolbar-search:focus-within {
+          border-color: rgba(180, 138, 234, 0.22);
+          box-shadow: inset 0 0 0 1px rgba(180, 138, 234, 0.12);
+        }
+
+        .wasmforge-shell .wf-horizontal-handle:hover,
+        .wasmforge-shell .wf-vertical-handle:hover {
+          background: rgba(180,138,234,0.05);
+        }
+
+        .wasmforge-shell .wf-terminal-surface {
+          position: relative;
+        }
+
+        .wasmforge-shell .wf-terminal-surface::before {
+          display: none;
+        }
+      `}
+    </style>
+  );
 }
 
 function getFileVisualMeta(filename = "") {
   switch (getFileExtension(filename)) {
     case "py":
-      return { label: "PY", accent: "#7bc4ae", surface: "rgba(123, 196, 174, 0.12)" };
+      return { label: "PY", accent: "#7dd8b0", surface: "rgba(70, 110, 91, 0.34)" };
     case "js":
-      return { label: "JS", accent: "#d6c472", surface: "rgba(214, 196, 114, 0.12)" };
+      return { label: "JS", accent: "#e8c872", surface: "rgba(91, 73, 33, 0.34)" };
     case "ts":
-      return { label: "TS", accent: "#7eb5ff", surface: "rgba(126, 181, 255, 0.12)" };
+      return { label: "TS", accent: "#72b4e8", surface: "rgba(44, 72, 96, 0.34)" };
     case "sql":
-      return { label: "SQL", accent: "#b790d7", surface: "rgba(183, 144, 215, 0.12)" };
+      return { label: "SQL", accent: "#b48aea", surface: "rgba(78, 54, 97, 0.34)" };
     case "pg":
-      return { label: "PG", accent: "#83b7d6", surface: "rgba(131, 183, 214, 0.12)" };
+      return { label: "PG", accent: "#a88de8", surface: "rgba(66, 52, 88, 0.34)" };
     default:
-      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.1)" };
+      return { label: "TXT", accent: "#afb7c2", surface: "rgba(55, 61, 69, 0.42)" };
   }
 }

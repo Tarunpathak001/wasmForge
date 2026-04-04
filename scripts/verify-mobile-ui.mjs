@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "..");
 const artifactsDir = path.join(workspaceRoot, "artifacts");
 const baseUrl = process.env.WASMFORGE_VERIFY_URL || "http://localhost:5173";
+const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = "playwright-verify";
 const mobileFilename = "mobile-verify.ts";
 
@@ -32,7 +33,7 @@ async function ensureVerificationWorkspace(page) {
     return;
   }
 
-  await page.getByPlaceholder("sql-practice").fill(verificationWorkspace);
+  await page.getByPlaceholder("workspace-name").fill(verificationWorkspace);
   await page.getByRole("button", { name: "Add" }).click();
   await page.locator(`button[title="${verificationWorkspace}"]`).first().waitFor();
 }
@@ -45,7 +46,7 @@ async function createFile(page, filename) {
   }
 
   await page.getByTitle("Create file").click();
-  const input = page.getByPlaceholder("new-file.py");
+  const input = page.getByPlaceholder("new-file.txt");
   await input.fill(filename);
   await input.press("Enter");
   await page.getByText(filename, { exact: true }).first().waitFor();
@@ -84,7 +85,7 @@ async function main() {
   });
 
   try {
-    await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.goto(ideUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.getByRole("button", { name: "Explorer", exact: true }).waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
 
@@ -123,6 +124,7 @@ async function main() {
 
     console.log(JSON.stringify({
       baseUrl,
+      ideUrl,
       workspace: verificationWorkspace,
       mobileNavigation: "ok",
       mobileSearch: "ok",

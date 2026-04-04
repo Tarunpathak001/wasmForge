@@ -1,0 +1,43 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700;800;900&display=swap");
+
+:root {
+  color-scheme: dark;
+  --wf-void: #09090b;
+  --wf-void2: #111114;
+  --wf-void3: #18181c;
+  --wf-void4: #222228;
+  --wf-surface: #2a2a32;
+  --wf-surface-strong: #3a3a44;
+  --wf-text: #ececef;
+  --wf-text-soft: #c4c4cc;
+  --wf-muted: #8b8b96;
+  --wf-muted-strong: #56565f;
+  --wf-accent: #b48aea;
+  --wf-accent-dim: #9a6dd4;
+  --wf-accent-soft: rgba(180, 138, 234, 0.12);
+  --wf-mint: #7dd8b0;
+  --wf-mint-soft: rgba(125, 216, 176, 0.12);
+  --wf-sky: #72b4e8;
+  --wf-rose: #e87272;
+  --wf-gold: #e8c872;
+  --wf-body: "Instrument Sans", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --wf-display: "Playfair Display", Georgia, serif;
+  --wf-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--wf-void);
+  color: var(--wf-text);
+  font-family: var(--wf-body);
+}
+
+a {
+  color: inherit;
+}

@@ -18,8 +18,8 @@ export default defineConfig({
         name: 'WasmForge',
         short_name: 'WasmForge',
         description: 'Your entire dev environment. One browser tab. Zero servers.',
-        theme_color: '#1a252f',
-        background_color: '#1a252f',
+        theme_color: '#09090b',
+        background_color: '#09090b',
         display: 'standalone',
       }
     })

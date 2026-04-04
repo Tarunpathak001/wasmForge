@@ -186,26 +186,26 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
 
     const xterm = new XTerm({
       theme: {
-        background: '#111317',
-        foreground: '#c7ced6',
-        cursor: '#d4d4d4',
-        selectionBackground: '#264f78',
-        black: '#111317',
-        red: '#f48771',
-        green: '#4ec9b0',
-        yellow: '#d7ba7d',
-        blue: '#1997ff',
-        magenta: '#c586c0',
-        cyan: '#4fc1ff',
-        white: '#c7ced6',
-        brightBlack: '#6b7280',
-        brightRed: '#ff9d8a',
-        brightGreen: '#76d4c0',
-        brightYellow: '#e5c07b',
-        brightBlue: '#56b6ff',
-        brightMagenta: '#d7a8d7',
-        brightCyan: '#72d6ff',
-        brightWhite: '#f3f4f6',
+        background: '#09090b',
+        foreground: '#c4cad6',
+        cursor: '#b48aea',
+        selectionBackground: '#36265e',
+        black: '#09090b',
+        red: '#e87272',
+        green: '#7dd8b0',
+        yellow: '#e8c872',
+        blue: '#72b4e8',
+        magenta: '#a88de8',
+        cyan: '#7dd8b0',
+        white: '#ececef',
+        brightBlack: '#56565f',
+        brightRed: '#f08080',
+        brightGreen: '#9be4c5',
+        brightYellow: '#f0d592',
+        brightBlue: '#93c8f0',
+        brightMagenta: '#c8b0f0',
+        brightCyan: '#9be4c5',
+        brightWhite: '#f5f1fa',
       },
       fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace',
       fontSize: 13,
@@ -236,8 +236,6 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
     fitAddonRef.current = fitAddon
     lastDimensionsRef.current = { cols: xterm.cols, rows: xterm.rows }
 
-    xterm.writeln('\x1b[90mWasmForge local runtime ready.\x1b[0m')
-    xterm.writeln('')
     fitTimeoutRef.current = setTimeout(() => {
       fitTimeoutRef.current = null
       scheduleFit()
@@ -347,11 +345,12 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
 
   return (
     <div
+      className='wf-terminal-surface'
       style={{
         width: '100%',
         height: '100%',
-        background: '#111317',
-        padding: '8px 12px',
+        background: '#09090b',
+        padding: '12px 14px 10px',
         boxSizing: 'border-box',
         borderRadius: 0,
       }}

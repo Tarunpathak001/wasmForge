@@ -195,22 +195,47 @@ function FileTree({
 
   return (
     <div
+      className="wf-file-tree"
       style={{
         width: "100%",
         height: "100%",
-        background: "#17191d",
-        color: "#d4d4d4",
+        background: "#111114",
+        color: "#ececef",
         display: "flex",
         flexDirection: "column",
         position: "relative",
         overflow: "hidden",
       }}
     >
+      <style>
+        {`
+          .wf-file-tree * {
+            box-sizing: border-box;
+          }
+
+          .wf-file-tree .wf-sidebar-card,
+          .wf-file-tree .wf-file-row,
+          .wf-file-tree .wf-create-file-btn,
+          .wf-file-tree .wf-workspace-entry {
+            transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, opacity 160ms ease;
+          }
+
+          .wf-file-tree ::-webkit-scrollbar {
+            width: 8px;
+          }
+
+          .wf-file-tree ::-webkit-scrollbar-thumb {
+            background: rgba(86, 86, 95, 0.38);
+            border-radius: 3px;
+          }
+        `}
+      </style>
+
       <div
         style={{
-          padding: "10px 10px 12px",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.045)",
-          background: "#17191d",
+          padding: "12px 12px 14px",
+          borderBottom: "1px solid #2a2a32",
+          background: "#111114",
           flexShrink: 0,
           position: "relative",
           zIndex: 2,
@@ -218,9 +243,9 @@ function FileTree({
       >
         <div
           style={{
-            color: "#9aa3ae",
+            color: "#8b8b96",
             fontSize: "10px",
-            letterSpacing: "0.16em",
+            letterSpacing: "0.18em",
             textTransform: "uppercase",
             fontWeight: 700,
           }}
@@ -229,12 +254,13 @@ function FileTree({
         </div>
 
         <div
+          className="wf-sidebar-card"
           style={{
-            marginTop: "8px",
-            padding: "10px",
-            border: "1px solid rgba(255,255,255,0.05)",
-            borderRadius: "8px",
-            background: "#1a1d22",
+            marginTop: "10px",
+            padding: "10px 12px 12px",
+            border: "1px solid #2a2a32",
+            borderRadius: "4px",
+            background: "#18181c",
             display: "grid",
             gap: "10px",
           }}
@@ -255,53 +281,33 @@ function FileTree({
             }}
             style={workspaceCardButtonStyle(disabled)}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={workspaceCardLabelStyle}>Project</div>
-                <div
-                  style={{
-                    marginTop: "4px",
-                    color: "#ffffff",
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    letterSpacing: "0.01em",
-                    lineHeight: 1.2,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {activeWorkspace}
-                </div>
-              </div>
-              <div
-                style={{
-                  width: "26px",
-                  height: "26px",
-                  borderRadius: "6px",
-                  display: "grid",
-                  placeItems: "center",
-                  background: "rgba(0,122,204,0.12)",
-                  color: "#7fc0ff",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  flexShrink: 0,
-                  boxShadow: "inset 0 0 0 1px rgba(0,122,204,0.18)",
-                }}
-              >
-                {activeWorkspace.charAt(0).toUpperCase()}
-              </div>
+            <div style={workspaceCardLabelStyle}>Workspace</div>
+            <div
+              style={{
+                marginTop: "6px",
+                color: "#ececef",
+                fontSize: "15px",
+                fontWeight: 700,
+                letterSpacing: "0.01em",
+                lineHeight: 1.2,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {activeWorkspace}
             </div>
             <div style={workspaceCardMetaStyle}>
               <span>
                 {orderedFiles.length} file{orderedFiles.length === 1 ? "" : "s"}
               </span>
               <span style={workspaceCardDotStyle} />
-              <span>Offline-ready</span>
+              <span>Stored locally</span>
             </div>
           </button>
 
           <button
+            className="wf-create-file-btn"
             type="button"
             onClick={() => {
               if (disabled) {
@@ -318,15 +324,28 @@ function FileTree({
             title="Create file"
             style={createFileButtonStyle(disabled)}
           >
-            <span style={{ fontSize: "13px", lineHeight: 1 }}>+</span>
+            <span
+              style={{
+                width: "18px",
+                height: "18px",
+                borderRadius: "4px",
+                display: "grid",
+                placeItems: "center",
+                background: "rgba(180,138,234,0.12)",
+                fontSize: "13px",
+                lineHeight: 1,
+              }}
+            >
+              +
+            </span>
             <span>Create File</span>
           </button>
         </div>
 
         <div
           style={{
-            marginTop: "12px",
-            color: "#707782",
+            marginTop: "14px",
+            color: "#8b8b96",
             fontSize: "10px",
             letterSpacing: "0.14em",
             textTransform: "uppercase",
@@ -338,8 +357,10 @@ function FileTree({
           }}
         >
           <span>{mode === "search" ? "Results" : "Files"}</span>
-          <span style={{ color: "#59606b", fontSize: "9px", letterSpacing: "0.1em" }}>
-            {mode === "search" ? "LIVE FILTER" : "LOCAL"}
+          <span style={{ color: "#56565f", fontSize: "9px", letterSpacing: "0.1em" }}>
+            {mode === "search"
+              ? `${visibleFiles.length} match${visibleFiles.length === 1 ? "" : "es"}`
+              : `${orderedFiles.length} file${orderedFiles.length === 1 ? "" : "s"}`}
           </span>
         </div>
 
@@ -347,10 +368,10 @@ function FileTree({
           <div
             style={{
               marginTop: "10px",
-              padding: "10px 10px 9px",
-              border: "1px solid rgba(255,255,255,0.05)",
-              borderRadius: "8px",
-              background: "#1a1d22",
+              padding: "12px 12px 10px",
+              border: "1px solid #2a2a32",
+              borderRadius: "4px",
+              background: "#18181c",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -367,14 +388,14 @@ function FileTree({
             <div
               style={{
                 marginTop: "8px",
-                color: "#7a828d",
+                color: "#8b8b96",
                 fontSize: "11px",
                 lineHeight: 1.5,
               }}
             >
               {normalizedSearchQuery
                 ? `${visibleFiles.length} match${visibleFiles.length === 1 ? "" : "es"} in ${activeWorkspace}`
-                : "Type a filename or extension to filter this workspace instantly."}
+                : "Filter files by name or extension."}
             </div>
           </div>
         ) : null}
@@ -388,6 +409,7 @@ function FileTree({
                 const isActive = workspaceName === activeWorkspace;
                 return (
                   <button
+                    className="wf-workspace-entry"
                     key={workspaceName}
                     type="button"
                     onClick={() => {
@@ -401,9 +423,9 @@ function FileTree({
                     <span
                       style={{
                         width: "8px",
-                        height: "8px",
-                        borderRadius: "999px",
-                        background: isActive ? "#007acc" : "#5e5e62",
+                        height: "2px",
+                        borderRadius: "1px",
+                        background: isActive ? "#b48aea" : "#56565f",
                         flexShrink: 0,
                       }}
                     />
@@ -438,7 +460,7 @@ function FileTree({
                       void handleWorkspaceCreate();
                     }
                   }}
-                  placeholder="sql-practice"
+                  placeholder="workspace-name"
                   style={workspaceInputStyle}
                 />
                 <button
@@ -471,12 +493,12 @@ function FileTree({
             flex: 1,
             minHeight: 0,
             overflowY: "auto",
-            padding: "8px 0 12px",
-            background: "#17191d",
+            padding: "10px 0 14px",
+            background: "transparent",
           }}
         >
         {isCreating ? (
-          <InlineRow meta={getFileMeta(createName || "new.py")}>
+          <InlineRow meta={getFileMeta(createName || "new-file.txt")}>
             <input
               ref={createInputRef}
               value={createName}
@@ -498,7 +520,7 @@ function FileTree({
                   setCreateName("");
                 }
               }}
-              placeholder="new-file.py"
+              placeholder="new-file.txt"
               spellCheck={false}
               style={inlineInputStyle}
             />
@@ -506,19 +528,19 @@ function FileTree({
         ) : null}
 
         {orderedFiles.length === 0 && !isCreating ? (
-          <div style={{ padding: "18px 12px", color: "#7b838e", fontSize: "12px", lineHeight: 1.55 }}>
-            No files in this workspace yet.
-            <div style={{ marginTop: "6px", color: "#656b75", fontSize: "11px" }}>
-              Use the plus button to create a file.
+          <div style={{ padding: "18px 12px", color: "#8b8b96", fontSize: "12px", lineHeight: 1.55 }}>
+            Create a file to begin.
+            <div style={{ marginTop: "6px", color: "#56565f", fontSize: "11px" }}>
+              Files and runtime data persist locally.
             </div>
           </div>
         ) : null}
 
         {orderedFiles.length > 0 && visibleFiles.length === 0 ? (
-          <div style={{ padding: "18px 12px", color: "#7b838e", fontSize: "12px", lineHeight: 1.55 }}>
+          <div style={{ padding: "18px 12px", color: "#8b8b96", fontSize: "12px", lineHeight: 1.55 }}>
             No files match "{searchQuery}".
-            <div style={{ marginTop: "6px", color: "#656b75", fontSize: "11px" }}>
-              Try a filename like `main`, `.py`, or `sql`.
+            <div style={{ marginTop: "6px", color: "#56565f", fontSize: "11px" }}>
+              Try `main`, `.ts`, `.sql`, or `.pg`.
             </div>
           </div>
         ) : null}
@@ -569,6 +591,29 @@ function FileTree({
             editInputRef={editingName === file.name ? editInputRef : null}
           />
         ))}
+      </div>
+
+      <div
+        style={{
+          flexShrink: 0,
+          padding: "10px 12px 12px",
+          borderTop: "1px solid #2a2a32",
+          background: "#111114",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            color: "#8b8b96",
+            fontSize: "11px",
+            lineHeight: 1.5,
+          }}
+        >
+          <span style={{ width: "8px", height: "2px", borderRadius: "1px", background: "#7dd8b0", flexShrink: 0 }} />
+          Saved locally
+        </div>
       </div>
 
       {contextMenu ? (
@@ -622,29 +667,27 @@ function FileItem({
 
   return (
     <div
+      className="wf-file-row"
       onClick={onSelect}
       onDoubleClick={onRenameStart}
       onContextMenu={onContextRequest}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        height: "30px",
+        height: "34px",
         display: "flex",
         alignItems: "center",
         gap: "8px",
-        padding: "0 8px 0 10px",
-        margin: "0 6px",
+        padding: "0 9px 0 11px",
+        margin: "0 8px",
         border: "1px solid",
-        borderColor: isActive ? "rgba(0,122,204,0.28)" : isHovered ? "rgba(255,255,255,0.05)" : "transparent",
-        background: isActive
-          ? "#20242b"
-          : isHovered
-            ? "#181d24"
-            : "transparent",
-        color: isActive ? "#ffffff" : "#d4d4d4",
+        borderColor: isActive ? "rgba(180, 138, 234, 0.18)" : isHovered ? "rgba(255,255,255,0.06)" : "transparent",
+        background: isActive ? "#18181c" : isHovered ? "#222228" : "transparent",
+        color: isActive ? "#ececef" : "#c4c4cc",
         cursor: disabled ? "default" : "pointer",
         borderRadius: "4px",
-        boxShadow: isActive ? "inset 2px 0 0 #007acc" : "none",
+        boxShadow: isActive ? "inset 2px 0 0 #b48aea" : "none",
+        transition: "background 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
       }}
     >
       <FileGlyph meta={meta} />
@@ -675,8 +718,9 @@ function FileItem({
               whiteSpace: "nowrap",
               fontFamily: '"Cascadia Code", Consolas, monospace',
               fontSize: "12px",
+              fontWeight: isActive ? 700 : 600,
               lineHeight: 1,
-              color: isActive ? "#ffffff" : "#c5ccd4",
+              color: isActive ? "#ececef" : "#c4c4cc",
             }}
             title={file.name}
           >
@@ -686,6 +730,7 @@ function FileItem({
       </div>
 
       <button
+        className="wf-file-row-action"
         type="button"
         onClick={onMenuOpen}
         onDoubleClick={(event) => event.stopPropagation()}
@@ -711,10 +756,10 @@ function MenuItem({ label, onClick, danger = false }) {
       style={{
         width: "100%",
         border: "none",
-        background: hovered ? "rgba(255,255,255,0.04)" : "transparent",
-        color: danger ? "#f48771" : "#d4d4d4",
+        background: hovered ? "rgba(255,255,255,0.05)" : "transparent",
+        color: danger ? "#f48771" : "#ececef",
         textAlign: "left",
-        padding: "8px 10px",
+        padding: "9px 12px",
         fontSize: "12px",
         cursor: "pointer",
         transition: "background 120ms ease",
@@ -729,14 +774,15 @@ function InlineRow({ meta, children }) {
   return (
     <div
       style={{
-        height: "28px",
+        height: "32px",
         display: "flex",
         alignItems: "center",
         gap: "8px",
-        padding: "0 8px 0 10px",
-        margin: "0 6px",
-        background: "#20242b",
+        padding: "0 9px 0 11px",
+        margin: "0 8px",
+        background: "#18181c",
         borderRadius: "4px",
+        boxShadow: "inset 2px 0 0 #b48aea",
       }}
     >
       <FileGlyph meta={meta} />
@@ -749,8 +795,8 @@ function FileGlyph({ meta }) {
   return (
     <span
       style={{
-        width: "18px",
-        height: "18px",
+        width: "20px",
+        height: "20px",
         borderRadius: "3px",
         display: "grid",
         placeItems: "center",
@@ -760,7 +806,7 @@ function FileGlyph({ meta }) {
         fontWeight: 700,
         letterSpacing: "0.03em",
         flexShrink: 0,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.03)",
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
       }}
       aria-hidden="true"
     >
@@ -772,8 +818,8 @@ function FileGlyph({ meta }) {
 function SearchGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="6.75" cy="6.75" r="3.75" stroke="#7b8693" strokeWidth="1.2" />
-      <path d="m9.75 9.75 3 3" stroke="#7b8693" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="6.75" cy="6.75" r="3.75" stroke="#8b8b96" strokeWidth="1.2" />
+      <path d="m9.75 9.75 3 3" stroke="#8b8b96" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -799,17 +845,17 @@ function getFileMeta(filename) {
 
   switch (extension) {
     case "py":
-      return { label: "PY", accent: "#7bc4ae", surface: "rgba(123, 196, 174, 0.12)" };
+      return { label: "PY", accent: "#7dd8b0", surface: "rgba(70, 110, 91, 0.34)" };
     case "js":
-      return { label: "JS", accent: "#d6c472", surface: "rgba(214, 196, 114, 0.12)" };
+      return { label: "JS", accent: "#e8c872", surface: "rgba(91, 73, 33, 0.34)" };
     case "ts":
-      return { label: "TS", accent: "#7eb5ff", surface: "rgba(126, 181, 255, 0.12)" };
+      return { label: "TS", accent: "#72b4e8", surface: "rgba(44, 72, 96, 0.34)" };
     case "sql":
-      return { label: "SQL", accent: "#b790d7", surface: "rgba(183, 144, 215, 0.12)" };
+      return { label: "SQL", accent: "#b48aea", surface: "rgba(78, 54, 97, 0.34)" };
     case "pg":
-      return { label: "PG", accent: "#83b7d6", surface: "rgba(131, 183, 214, 0.12)" };
+      return { label: "PG", accent: "#a88de8", surface: "rgba(66, 52, 88, 0.34)" };
     default:
-      return { label: "TXT", accent: "#9da3aa", surface: "rgba(157, 163, 170, 0.1)" };
+      return { label: "TXT", accent: "#afb7c2", surface: "rgba(55, 61, 69, 0.42)" };
   }
 }
 
@@ -824,35 +870,35 @@ function getContextMenuStyle(contextMenu) {
     left: `${left}px`,
     top: `${top}px`,
     minWidth: "160px",
-    border: "1px solid rgba(30,30,30,0.95)",
-    background: "#1e232a",
-    boxShadow: "0 18px 34px rgba(0, 0, 0, 0.42)",
+    border: "1px solid #2a2a32",
+    background: "#111114",
+    boxShadow: "0 16px 30px rgba(0, 0, 0, 0.34)",
     zIndex: 40,
     padding: "6px 0",
-    borderRadius: "6px",
+    borderRadius: "4px",
   };
 }
 
 const menuSectionLabelStyle = {
-  color: "#bbbbbb",
+  color: "#c4c4cc",
   fontSize: "10px",
   fontWeight: 700,
   textTransform: "uppercase",
-  letterSpacing: "0.12em",
+  letterSpacing: "0.14em",
   marginBottom: "8px",
 };
 
 const inlineInputStyle = {
   width: "100%",
-  border: "1px solid #007acc",
-  background: "#1e1e1e",
-  color: "#d4d4d4",
+  border: "1px solid rgba(180, 138, 234, 0.28)",
+  background: "#09090b",
+  color: "#ececef",
   fontFamily: '"Cascadia Code", Consolas, monospace',
   fontSize: "12px",
-  padding: "4px 7px",
+  padding: "5px 8px",
   outline: "none",
   boxSizing: "border-box",
-  borderRadius: "4px",
+  borderRadius: "3px",
 };
 
 const searchInputStyle = {
@@ -860,7 +906,7 @@ const searchInputStyle = {
   minWidth: 0,
   border: "none",
   background: "transparent",
-  color: "#d4d4d4",
+  color: "#ececef",
   fontSize: "12px",
   outline: "none",
   padding: 0,
@@ -868,15 +914,15 @@ const searchInputStyle = {
 
 const workspaceMenuStyle = {
   position: "absolute",
-  top: "132px",
+  top: "144px",
   left: "8px",
   right: "8px",
-  border: "1px solid rgba(30,30,30,0.95)",
-  background: "#1d2026",
-  boxShadow: "0 14px 28px rgba(0, 0, 0, 0.34)",
-  padding: "10px",
+  border: "1px solid #2a2a32",
+  background: "#111114",
+  boxShadow: "0 16px 30px rgba(0, 0, 0, 0.34)",
+  padding: "12px",
   zIndex: 30,
-  borderRadius: "6px",
+  borderRadius: "4px",
 };
 
 function workspaceCardButtonStyle(disabled = false) {
@@ -884,22 +930,22 @@ function workspaceCardButtonStyle(disabled = false) {
     width: "100%",
     border: "none",
     background: "transparent",
-    color: "#d4d4d4",
+    color: "#ececef",
     padding: "0",
     textAlign: "left",
     cursor: disabled ? "default" : "pointer",
     display: "grid",
     gap: "8px",
-    borderRadius: "6px",
+    borderRadius: "4px",
     opacity: disabled ? 0.8 : 1,
   };
 }
 
 const workspaceCardLabelStyle = {
-  color: "#8f98a4",
+  color: "#8b8b96",
   fontSize: "10px",
   textTransform: "uppercase",
-  letterSpacing: "0.14em",
+  letterSpacing: "0.16em",
   fontWeight: 700,
 };
 
@@ -907,7 +953,7 @@ const workspaceCardMetaStyle = {
   display: "flex",
   alignItems: "center",
   gap: "8px",
-  color: "#7e8793",
+  color: "#8b8b96",
   fontSize: "10px",
   whiteSpace: "nowrap",
   overflow: "hidden",
@@ -915,57 +961,55 @@ const workspaceCardMetaStyle = {
 };
 
 const workspaceCardDotStyle = {
-  width: "4px",
-  height: "4px",
-  borderRadius: "999px",
-  background: "#4f5661",
+  width: "6px",
+  height: "2px",
+  borderRadius: "1px",
+  background: "#56565f",
   flexShrink: 0,
 };
 
 function createFileButtonStyle(disabled = false) {
   return {
     width: "100%",
-    height: "32px",
-    border: disabled ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(0,122,204,0.32)",
-    background: disabled
-      ? "#1f242b"
-      : "#0e78d8",
-    color: "#ffffff",
+    height: "34px",
+    border: disabled ? "1px solid #2a2a32" : "1px solid rgba(180, 138, 234, 0.18)",
+    background: disabled ? "#18181c" : "#222228",
+    color: disabled ? "#8b8b96" : "#ececef",
     cursor: disabled ? "default" : "pointer",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: "8px",
-    borderRadius: "4px",
+    borderRadius: "3px",
     fontSize: "12px",
     fontWeight: 700,
-    letterSpacing: "0.02em",
-    boxShadow: "none",
+    letterSpacing: "0.04em",
   };
 }
 
 const workspaceInputStyle = {
   flex: 1,
   minWidth: 0,
-  border: "1px solid rgba(255,255,255,0.05)",
-  background: "#1e1e1e",
-  color: "#d4d4d4",
+  border: "1px solid #2a2a32",
+  background: "#09090b",
+  color: "#ececef",
   fontSize: "12px",
-  padding: "6px 8px",
+  padding: "8px 10px",
   outline: "none",
-  borderRadius: "6px",
+  borderRadius: "4px",
 };
 
 function workspaceCreateButtonStyle(disabled = false) {
   return {
-    border: "none",
-    background: disabled ? "#2a2d2e" : "#0e78d8",
+    border: "1px solid rgba(180, 138, 234, 0.18)",
+    background: disabled ? "#222228" : "#b48aea",
     color: "#ffffff",
-    padding: "0 10px",
+    padding: "0 12px",
     fontSize: "12px",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.7 : 1,
-    borderRadius: "4px",
+    borderRadius: "3px",
+    fontWeight: 700,
   };
 }
 
@@ -975,7 +1019,7 @@ function workspaceToggleButtonStyle(disabled = false) {
     minWidth: 0,
     border: "none",
     background: "transparent",
-    color: "#d4d4d4",
+    color: "#ececef",
     padding: "2px 0 4px",
     textAlign: "left",
     display: "flex",
@@ -987,15 +1031,15 @@ function workspaceToggleButtonStyle(disabled = false) {
 
 function workspaceMenuItemStyle(active = false) {
   return {
-    height: "28px",
-    border: "1px solid transparent",
-    background: active ? "#20242b" : "transparent",
-    color: active ? "#ffffff" : "#d4d4d4",
+    height: "30px",
+    border: `1px solid ${active ? "rgba(180, 138, 234, 0.18)" : "transparent"}`,
+    background: active ? "#18181c" : "transparent",
+    color: active ? "#ececef" : "#c4c4cc",
     textAlign: "left",
-    padding: "0 8px",
+    padding: "0 10px",
     cursor: "pointer",
     fontSize: "12px",
-    borderRadius: "4px",
+    borderRadius: "3px",
     display: "flex",
     alignItems: "center",
     gap: "8px",
@@ -1008,7 +1052,7 @@ function headerIconButtonStyle(disabled = false) {
     height: "24px",
     border: "1px solid rgba(255,255,255,0.05)",
     background: "rgba(255,255,255,0.02)",
-    color: disabled ? "#5f5f5f" : "#bbbbbb",
+    color: disabled ? "#56565f" : "#c4c4cc",
     cursor: disabled ? "default" : "pointer",
     fontSize: "16px",
     lineHeight: 1,
@@ -1020,11 +1064,11 @@ function headerIconButtonStyle(disabled = false) {
 
 function fileActionButtonStyle(visible = false) {
   return {
-    width: "20px",
-    height: "20px",
-    border: "none",
-    background: visible ? "rgba(255,255,255,0.03)" : "transparent",
-    color: "#858585",
+    width: "22px",
+    height: "22px",
+    border: "1px solid rgba(255,255,255,0.04)",
+    background: visible ? "#222228" : "transparent",
+    color: "#8b8b96",
     cursor: "pointer",
     opacity: visible ? 1 : 0,
     transition: "opacity 120ms ease, background 120ms ease",

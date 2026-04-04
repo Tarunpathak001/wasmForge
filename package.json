@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "verify:ide": "node scripts/verify-ide.mjs",
-    "verify:mobile": "node scripts/verify-mobile-ui.mjs"
+    "verify:mobile": "node scripts/verify-mobile-ui.mjs",
+    "verify:claims": "node scripts/verify-claims.mjs",
+    "verify:all": "npm run verify:ide && npm run verify:mobile && npm run verify:claims"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.4.2",

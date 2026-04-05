@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Terminal from "./components/Terminal.jsx";
 import FileTree from "./components/FileTree.jsx";
 import SqlResultsPanel from "./components/SqlResultsPanel.jsx";
@@ -15,6 +15,7 @@ import {
   getRuntimeKind,
   getSqlDatabaseDescriptor,
 } from "./utils/sqlRuntime.js";
+import { persistAppTheme, readStoredAppTheme } from "./constants/theme.js";
 
 const DEFAULT_FILENAME = "main.py";
 const DEFAULT_WORKSPACE_NAME = "local-workspace";
@@ -39,6 +40,130 @@ const MIN_EDITOR_PANEL_HEIGHT = 220;
 const MIN_TERMINAL_PANEL_HEIGHT = 160;
 const DEFAULT_EDITOR_RATIO = 0.65;
 const Editor = lazy(() => import("./components/Editor.jsx"));
+
+const IDE_THEME_PALETTES = {
+  default: {
+    shellBg: "#09090b",
+    shellElevated: "#111114",
+    shellSubtle: "#18181c",
+    shellPanel: "#222228",
+    shellPanelStrong: "#0d141c",
+    shellBorder: "#2a2a32",
+    shellBorderStrong: "#3a3a44",
+    shellText: "#ececef",
+    shellTextSoft: "#c4c4cc",
+    shellMuted: "#8b8b96",
+    shellMutedStrong: "#56565f",
+    shellAccent: "#b48aea",
+    shellAccentStrong: "#9a6dd4",
+    shellAccentSoft: "rgba(180, 138, 234, 0.12)",
+    shellAccentContrast: "#ffffff",
+    shellSuccess: "#7dd8b0",
+    shellWarning: "#e8c872",
+    shellDanger: "#f48771",
+    shellHover: "#222228",
+    shellSelection: "rgba(180, 138, 234, 0.12)",
+    shellEditorBg: "#09090b",
+    shellOutputBg: "#0d141c",
+    shellGradient: "linear-gradient(180deg, #111114 0%, #09090b 100%)",
+    activityBg: "#111114",
+    filePyAccent: "#7dd8b0",
+    filePySurface: "rgba(70, 110, 91, 0.34)",
+    fileJsAccent: "#e8c872",
+    fileJsSurface: "rgba(91, 73, 33, 0.34)",
+    fileTsAccent: "#72b4e8",
+    fileTsSurface: "rgba(44, 72, 96, 0.34)",
+    fileSqlAccent: "#b48aea",
+    fileSqlSurface: "rgba(78, 54, 97, 0.34)",
+    filePgAccent: "#a88de8",
+    filePgSurface: "rgba(66, 52, 88, 0.34)",
+    fileTxtAccent: "#afb7c2",
+    fileTxtSurface: "rgba(55, 61, 69, 0.42)",
+  },
+  inverted: {
+    shellBg: "#ebe4da",
+    shellElevated: "#e2d9e8",
+    shellSubtle: "#ddd3e3",
+    shellPanel: "#efe8de",
+    shellPanelStrong: "#f2ece2",
+    shellBorder: "#d2c8d8",
+    shellBorderStrong: "#c3b8cb",
+    shellText: "#32283c",
+    shellTextSoft: "#5e546c",
+    shellMuted: "#8c8298",
+    shellMutedStrong: "#a297ab",
+    shellAccent: "#7350a7",
+    shellAccentStrong: "#624392",
+    shellAccentSoft: "rgba(115, 80, 167, 0.10)",
+    shellAccentContrast: "#f5efe7",
+    shellSuccess: "#61856d",
+    shellWarning: "#a7793e",
+    shellDanger: "#b5645d",
+    shellHover: "#e8eef3",
+    shellSelection: "#e5ebf1",
+    shellEditorBg: "#f3ede2",
+    shellOutputBg: "#f0e9df",
+    shellGradient: "linear-gradient(180deg, #f0e9df 0%, #e5dcea 100%)",
+    activityBg: "#e9e0eb",
+    filePyAccent: "#61856d",
+    filePySurface: "rgba(97, 133, 109, 0.14)",
+    fileJsAccent: "#a7793e",
+    fileJsSurface: "rgba(167, 121, 62, 0.10)",
+    fileTsAccent: "#5d79a9",
+    fileTsSurface: "rgba(93, 121, 169, 0.10)",
+    fileSqlAccent: "#7350a7",
+    fileSqlSurface: "rgba(115, 80, 167, 0.10)",
+    filePgAccent: "#8b6ab8",
+    filePgSurface: "rgba(139, 106, 184, 0.10)",
+    fileTxtAccent: "#6d6479",
+    fileTxtSurface: "rgba(109, 100, 121, 0.10)",
+  },
+};
+
+function getIdePalette(theme) {
+  return IDE_THEME_PALETTES[theme] || IDE_THEME_PALETTES.default;
+}
+
+function getIdeCssVars(palette) {
+  return {
+    "--ide-shell-bg": palette.shellBg,
+    "--ide-shell-elevated": palette.shellElevated,
+    "--ide-shell-subtle": palette.shellSubtle,
+    "--ide-shell-panel": palette.shellPanel,
+    "--ide-shell-panel-strong": palette.shellPanelStrong,
+    "--ide-shell-border": palette.shellBorder,
+    "--ide-shell-border-strong": palette.shellBorderStrong,
+    "--ide-shell-text": palette.shellText,
+    "--ide-shell-text-soft": palette.shellTextSoft,
+    "--ide-shell-muted": palette.shellMuted,
+    "--ide-shell-muted-strong": palette.shellMutedStrong,
+    "--ide-shell-accent": palette.shellAccent,
+    "--ide-shell-accent-strong": palette.shellAccentStrong,
+    "--ide-shell-accent-soft": palette.shellAccentSoft,
+    "--ide-shell-accent-contrast": palette.shellAccentContrast,
+    "--ide-shell-success": palette.shellSuccess,
+    "--ide-shell-warning": palette.shellWarning,
+    "--ide-shell-danger": palette.shellDanger,
+    "--ide-shell-hover": palette.shellHover,
+    "--ide-shell-selection": palette.shellSelection,
+    "--ide-shell-editor-bg": palette.shellEditorBg,
+    "--ide-shell-output-bg": palette.shellOutputBg,
+    "--ide-shell-gradient": palette.shellGradient,
+    "--ide-activity-bg": palette.activityBg,
+    "--ide-file-py-accent": palette.filePyAccent,
+    "--ide-file-py-surface": palette.filePySurface,
+    "--ide-file-js-accent": palette.fileJsAccent,
+    "--ide-file-js-surface": palette.fileJsSurface,
+    "--ide-file-ts-accent": palette.fileTsAccent,
+    "--ide-file-ts-surface": palette.fileTsSurface,
+    "--ide-file-sql-accent": palette.fileSqlAccent,
+    "--ide-file-sql-surface": palette.fileSqlSurface,
+    "--ide-file-pg-accent": palette.filePgAccent,
+    "--ide-file-pg-surface": palette.filePgSurface,
+    "--ide-file-txt-accent": palette.fileTxtAccent,
+    "--ide-file-txt-surface": palette.fileTxtSurface,
+  };
+}
 
 function getLanguage(filename) {
   const ext = getFileExtension(filename);
@@ -211,24 +336,25 @@ function getRuntimeLanguageLabel(runtime, filename = "") {
 
 function getStatusBarTone(activeRuntime, activeStatusMessage, activeRuntimeRunning, activeHasError, activeRuntimeReady, isAwaitingInput) {
   if (activeHasError) {
-    return "#f48771";
+    return "var(--ide-shell-danger)";
   }
   if (activeRuntime === "python" && isAwaitingInput) {
-    return "#e8c872";
+    return "var(--ide-shell-warning)";
   }
   if (activeRuntimeRunning) {
-    return "#b48aea";
+    return "var(--ide-shell-accent)";
   }
   if (activeRuntimeReady) {
-    return "#7dd8b0";
+    return "var(--ide-shell-success)";
   }
   if (!activeStatusMessage) {
-    return "#8b8b96";
+    return "var(--ide-shell-muted)";
   }
-  return "#8b8b96";
+  return "var(--ide-shell-muted)";
 }
 
 export default function App({ onNavigateHome }) {
+  const [theme, setTheme] = useState(() => readStoredAppTheme());
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(DEFAULT_FILENAME);
   const [openFiles, setOpenFiles] = useState([]);
@@ -257,6 +383,33 @@ export default function App({ onNavigateHome }) {
   const activeFileRef = useRef(DEFAULT_FILENAME);
   const activeWorkspaceRef = useRef(activeWorkspace);
   const recoveryWritesRef = useRef(readRecoveryEntries(activeWorkspace));
+  const ideTheme = theme;
+  const idePalette = useMemo(() => getIdePalette(ideTheme), [ideTheme]);
+  const ideCssVars = useMemo(() => getIdeCssVars(idePalette), [idePalette]);
+
+  useEffect(() => {
+    persistAppTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const syncTheme = (event) => {
+      setTheme(event.detail?.theme === "inverted" ? "inverted" : "default");
+    };
+
+    const syncThemeFromStorage = (event) => {
+      if (event.key && event.key !== "wasmforge:theme" && event.key !== "wasmforge:landing-theme") {
+        return;
+      }
+      setTheme(readStoredAppTheme());
+    };
+
+    window.addEventListener("wasmforge-theme-change", syncTheme);
+    window.addEventListener("storage", syncThemeFromStorage);
+    return () => {
+      window.removeEventListener("wasmforge-theme-change", syncTheme);
+      window.removeEventListener("storage", syncThemeFromStorage);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -1471,9 +1624,13 @@ export default function App({ onNavigateHome }) {
         ? "console"
         : "editor";
   const mobileHeaderTitle = activeFile || "No file selected";
+  const toggleTheme = useCallback(() => {
+    setTheme((currentTheme) => (currentTheme === "default" ? "inverted" : "default"));
+  }, []);
 
   const filesPanel = (
     <FileTree
+      theme={theme}
       files={files}
       activeFile={activeFile}
       activeWorkspace={activeWorkspace}
@@ -1500,7 +1657,7 @@ export default function App({ onNavigateHome }) {
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
-        background: "#09090b",
+        background: "var(--ide-shell-editor-bg)",
       }}
     >
       {files.length === 0 ? (
@@ -1515,9 +1672,9 @@ export default function App({ onNavigateHome }) {
                 height: "100%",
                 display: "grid",
                 placeItems: "center",
-                color: "#858585",
+                color: "var(--ide-shell-muted)",
                 fontSize: "13px",
-                background: "#09090b",
+                background: "var(--ide-shell-editor-bg)",
               }}
             >
               Loading editor...
@@ -1532,6 +1689,7 @@ export default function App({ onNavigateHome }) {
             language={getLanguage(activeFile || DEFAULT_FILENAME)}
             readOnly={isAnyRuntimeBusy}
             draftStorageKey={draftStorageKey}
+            themeMode={ideTheme === "inverted" ? "day" : "night"}
           />
         </Suspense>
       )}
@@ -1545,7 +1703,7 @@ export default function App({ onNavigateHome }) {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        background: "linear-gradient(180deg, #111114 0%, #09090b 100%)",
+        background: "var(--ide-shell-gradient)",
       }}
     >
       <div
@@ -1554,9 +1712,9 @@ export default function App({ onNavigateHome }) {
           display: "flex",
           alignItems: "stretch",
           justifyContent: "space-between",
-          borderBottom: "1px solid #2a2a32",
-          background: "#111114",
-          boxShadow: "inset 0 -1px 0 rgba(255,255,255,0.02)",
+          borderBottom: "1px solid var(--ide-shell-border)",
+          background: "var(--ide-shell-elevated)",
+          boxShadow: "inset 0 -1px 0 var(--ide-shell-accent-soft)",
           flexShrink: 0,
         }}
       >
@@ -1576,12 +1734,12 @@ export default function App({ onNavigateHome }) {
               minWidth: 0,
             }}
           >
-            <span style={{ color: "#8b8b96", fontSize: "10px", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+            <span style={{ color: "var(--ide-shell-muted)", fontSize: "10px", letterSpacing: "0.14em", textTransform: "uppercase" }}>
               Runtime
             </span>
             <span
               style={{
-                color: "#ececef",
+                color: "var(--ide-shell-text)",
                 fontSize: "11px",
                 fontWeight: 600,
                 whiteSpace: "nowrap",
@@ -1613,7 +1771,10 @@ export default function App({ onNavigateHome }) {
             <button
               type="button"
               onClick={handleKill}
-              style={terminalActionButtonStyle({ color: "#f48771", border: "rgba(244, 135, 113, 0.18)" })}
+              style={terminalActionButtonStyle({
+                color: "var(--ide-shell-danger)",
+                border: "color-mix(in srgb, var(--ide-shell-danger) 28%, transparent)",
+              })}
               className="wf-terminal-action"
             >
               Kill
@@ -1622,9 +1783,9 @@ export default function App({ onNavigateHome }) {
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#09090b" }}>
+      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "var(--ide-shell-editor-bg)" }}>
         <div style={{ display: terminalVisible ? "block" : "none", height: "100%" }}>
-          <Terminal ref={terminalRef} isVisible={terminalVisible} />
+          <Terminal ref={terminalRef} isVisible={terminalVisible} themeMode={ideTheme === "inverted" ? "day" : "night"} />
         </div>
         <div style={{ display: outputVisible ? "block" : "none", height: "100%" }}>
           {showResultsPanel ? (
@@ -1649,12 +1810,13 @@ export default function App({ onNavigateHome }) {
     <div
       className="wasmforge-shell"
       style={{
+        ...ideCssVars,
         minHeight: "100dvh",
         height: "100dvh",
         overflow: "hidden",
         position: "relative",
-        background: "#09090b",
-        color: "#ececef",
+        background: "var(--ide-shell-bg)",
+        color: "var(--ide-shell-text)",
         fontFamily: '"Instrument Sans", "Segoe UI Variable Text", "Segoe UI", sans-serif',
         display: "flex",
         flexDirection: "column",
@@ -1671,8 +1833,8 @@ export default function App({ onNavigateHome }) {
             flexDirection: "column",
             position: "relative",
             zIndex: 1,
-            background: "#111114",
-            borderBottom: "1px solid #2a2a32",
+            background: "var(--ide-shell-elevated)",
+            borderBottom: "1px solid var(--ide-shell-border)",
           }}
         >
           <div
@@ -1683,8 +1845,8 @@ export default function App({ onNavigateHome }) {
               height: "32px",
               minHeight: "32px",
               padding: "0 14px",
-              borderBottom: "1px solid #2a2a32",
-              background: "#111114",
+              borderBottom: "1px solid var(--ide-shell-border)",
+              background: "var(--ide-shell-elevated)",
             }}
           >
             <button
@@ -1705,7 +1867,7 @@ export default function App({ onNavigateHome }) {
               }}
             >
               <LogoMark />
-              <div style={{ color: "#ececef", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", letterSpacing: "0.01em" }}>
+              <div style={{ color: "var(--ide-shell-text)", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", letterSpacing: "0.01em" }}>
                 WasmForge
               </div>
             </button>
@@ -1721,11 +1883,11 @@ export default function App({ onNavigateHome }) {
               />
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0, color: "#8b8b96", fontSize: "11px" }}>
-              <span style={{ color: "#ececef", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0, color: "var(--ide-shell-muted)", fontSize: "11px" }}>
+              <span style={{ color: "var(--ide-shell-text)", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {activeWorkspace}
               </span>
-              <span style={{ width: "1px", height: "12px", background: "#3a3a44", flexShrink: 0 }} />
+              <span style={{ width: "1px", height: "12px", background: "var(--ide-shell-border-strong)", flexShrink: 0 }} />
               <span>{currentLanguageLabel}</span>
             </div>
           </div>
@@ -1735,28 +1897,28 @@ export default function App({ onNavigateHome }) {
               display: "flex",
               alignItems: "stretch",
               minHeight: "32px",
-              background: "#18181c",
+              background: "var(--ide-shell-subtle)",
             }}
           >
             <div
               style={{
                 width: `${desktopNavWidth}px`,
                 minWidth: `${desktopNavWidth}px`,
-                borderRight: "1px solid #2a2a32",
-                background: "#18181c",
+                borderRight: "1px solid var(--ide-shell-border)",
+                background: "var(--ide-shell-subtle)",
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
                 padding: "0 14px",
-                color: "#8b8b96",
+                color: "var(--ide-shell-muted)",
                 fontSize: "11px",
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
                 whiteSpace: "nowrap",
               }}
             >
-              <span style={{ color: "#ececef", fontWeight: 700 }}>{sidebarModeLabel}</span>
-              <span style={{ width: "4px", height: "10px", borderRadius: "1px", background: "#48367a", flexShrink: 0 }} />
+              <span style={{ color: "var(--ide-shell-text)", fontWeight: 700 }}>{sidebarModeLabel}</span>
+              <span style={{ width: "4px", height: "10px", borderRadius: "1px", background: "var(--ide-shell-accent)", flexShrink: 0 }} />
               <span>{files.length} file{files.length === 1 ? "" : "s"}</span>
             </div>
 
@@ -1768,11 +1930,11 @@ export default function App({ onNavigateHome }) {
                 alignItems: "stretch",
                 overflowX: "auto",
                 scrollbarWidth: "thin",
-                background: "#18181c",
+                background: "var(--ide-shell-subtle)",
               }}
             >
               {fileTabs.length === 0 ? (
-                <div style={{ padding: "0 12px", color: "#8b8b96", fontSize: "12px", display: "flex", alignItems: "center" }}>
+                <div style={{ padding: "0 12px", color: "var(--ide-shell-muted)", fontSize: "12px", display: "flex", alignItems: "center" }}>
                   No file selected
                 </div>
               ) : (
@@ -1797,8 +1959,8 @@ export default function App({ onNavigateHome }) {
                 justifyContent: "flex-end",
                 padding: "0 12px",
                 flexShrink: 0,
-                borderLeft: "1px solid #2a2a32",
-                background: "#18181c",
+                borderLeft: "1px solid var(--ide-shell-border)",
+                background: "var(--ide-shell-subtle)",
               }}
             >
               <button
@@ -1816,7 +1978,7 @@ export default function App({ onNavigateHome }) {
       ) : null}
 
       {isMobileLayout ? (
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "#09090b", position: "relative", zIndex: 1 }}>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--ide-shell-bg)", position: "relative", zIndex: 1 }}>
           <div
             style={{
               height: `${MOBILE_TOPBAR_HEIGHT}px`,
@@ -1825,8 +1987,8 @@ export default function App({ onNavigateHome }) {
               alignItems: "center",
               gap: "12px",
               padding: "0 14px",
-              background: "#111114",
-              borderBottom: "1px solid #2a2a32",
+              background: "var(--ide-shell-elevated)",
+              borderBottom: "1px solid var(--ide-shell-border)",
               flexShrink: 0,
             }}
           >
@@ -1863,14 +2025,14 @@ export default function App({ onNavigateHome }) {
             >
               <div style={{ display: "flex", alignItems: "center", gap: "9px", minWidth: 0 }}>
                 <LogoMark />
-                <div style={{ color: "#ececef", fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em" }}>
+                <div style={{ color: "var(--ide-shell-text)", fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em" }}>
                   WasmForge
                 </div>
               </div>
               <div
                 style={{
                   marginTop: "4px",
-                  color: "#c4c4cc",
+                  color: "var(--ide-shell-text-soft)",
                   fontSize: "12px",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
@@ -1878,8 +2040,17 @@ export default function App({ onNavigateHome }) {
                 }}
               >
                 {mobileHeaderTitle}
-                <span style={{ color: "#8b8b96" }}> — {activeWorkspace}</span>
+                <span style={{ color: "var(--ide-shell-muted)" }}> — {activeWorkspace}</span>
               </div>
+            </button>
+
+            <button
+              type="button"
+              aria-label="Toggle theme"
+              onClick={toggleTheme}
+              style={mobileTopButtonStyle(ideTheme === "inverted")}
+            >
+              <ThemeToggleGlyph theme={ideTheme} />
             </button>
 
             <div style={mobileSignalChipStyle(statusBarTone)}>
@@ -1894,14 +2065,14 @@ export default function App({ onNavigateHome }) {
               display: "flex",
               alignItems: "stretch",
               overflowX: "auto",
-              background: "#18181c",
-              borderBottom: "1px solid #2a2a32",
+              background: "var(--ide-shell-subtle)",
+              borderBottom: "1px solid var(--ide-shell-border)",
               flexShrink: 0,
               scrollbarWidth: "none",
             }}
           >
             {fileTabs.length === 0 ? (
-              <div style={{ padding: "0 14px", display: "flex", alignItems: "center", color: "#8b8b96", fontSize: "12px" }}>
+              <div style={{ padding: "0 14px", display: "flex", alignItems: "center", color: "var(--ide-shell-muted)", fontSize: "12px" }}>
                 Open a file from the explorer to begin
               </div>
             ) : (
@@ -1925,14 +2096,14 @@ export default function App({ onNavigateHome }) {
             ) : mobilePane === "output" ? (
               <div style={{ height: "100%" }}>{outputPanel}</div>
             ) : (
-              <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#09090b" }}>
+              <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--ide-shell-bg)" }}>
                 <div style={{ flex: 1, minHeight: 0 }}>{editorPanel}</div>
                 <div
                   style={{
                     flex: `0 0 ${MOBILE_DOCKED_PANEL_HEIGHT}px`,
                     minHeight: "180px",
-                    borderTop: "1px solid #2a2a32",
-                    background: "#09090b",
+                    borderTop: "1px solid var(--ide-shell-border)",
+                    background: "var(--ide-shell-bg)",
                   }}
                 >
                   {outputPanel}
@@ -1963,10 +2134,10 @@ export default function App({ onNavigateHome }) {
               justifyContent: "space-between",
               gap: "10px",
               padding: "0 10px",
-              background: "#18181c",
-              color: "#ececef",
+              background: "var(--ide-shell-subtle)",
+              color: "var(--ide-shell-text)",
               fontSize: "11px",
-              borderTop: "1px solid #2a2a32",
+              borderTop: "1px solid var(--ide-shell-border)",
               flexShrink: 0,
             }}
           >
@@ -1998,8 +2169,8 @@ export default function App({ onNavigateHome }) {
               gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
               gap: "8px",
               padding: "8px 10px 10px",
-              background: "#111114",
-              borderTop: "1px solid #2a2a32",
+              background: "var(--ide-shell-elevated)",
+              borderTop: "1px solid var(--ide-shell-border)",
               flexShrink: 0,
             }}
           >
@@ -2047,8 +2218,8 @@ export default function App({ onNavigateHome }) {
           <div
             style={{
               width: `${ACTIVITY_BAR_WIDTH}px`,
-              background: "#111114",
-              borderRight: "1px solid #2a2a32",
+              background: "var(--ide-activity-bg)",
+              borderRight: "1px solid var(--ide-shell-border)",
               display: "flex",
               flexDirection: "column",
               alignItems: "stretch",
@@ -2065,14 +2236,17 @@ export default function App({ onNavigateHome }) {
               <ActivityButton active={sidebarMode === "search"} title="Search" onClick={() => setSidebarMode("search")}>
                 <SearchIcon />
               </ActivityButton>
+              <ActivityButton active={ideTheme === "inverted"} title="Toggle theme" onClick={toggleTheme}>
+                <ThemeToggleGlyph theme={ideTheme} />
+              </ActivityButton>
             </div>
           </div>
 
           <div
             style={{
               width: `${sidebarWidth}px`,
-              background: "#111114",
-              borderRight: "1px solid #2a2a32",
+              background: "var(--ide-shell-elevated)",
+              borderRight: "1px solid var(--ide-shell-border)",
               minWidth: 0,
               flexShrink: 0,
             }}
@@ -2091,7 +2265,7 @@ export default function App({ onNavigateHome }) {
                 display: "flex",
                 flexDirection: "column",
                 padding: "10px 12px 10px 10px",
-                background: "#09090b",
+                background: "var(--ide-shell-bg)",
               }}
             >
               <div
@@ -2101,7 +2275,7 @@ export default function App({ onNavigateHome }) {
                   minWidth: 0,
                   borderRadius: "4px",
                   overflow: "hidden",
-                  border: "1px solid #2a2a32",
+                  border: "1px solid var(--ide-shell-border)",
                   boxShadow: "none",
                 }}
               >
@@ -2115,7 +2289,7 @@ export default function App({ onNavigateHome }) {
                   minWidth: 0,
                   borderRadius: "4px",
                   overflow: "hidden",
-                  border: "1px solid #2a2a32",
+                  border: "1px solid var(--ide-shell-border)",
                   boxShadow: "none",
                 }}
               >
@@ -2138,10 +2312,10 @@ export default function App({ onNavigateHome }) {
             padding: "0 10px",
             position: "relative",
             zIndex: 1,
-            background: "#18181c",
-            color: "#ececef",
+            background: "var(--ide-shell-subtle)",
+            color: "var(--ide-shell-text)",
             fontSize: "12px",
-            borderTop: "1px solid #2a2a32",
+            borderTop: "1px solid var(--ide-shell-border)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
@@ -2190,7 +2364,7 @@ function HorizontalResizeHandle({ onPointerDown }) {
         placeItems: "center",
       }}
     >
-      <div style={{ width: "54px", height: "1px", background: "rgba(58, 58, 68, 0.92)" }} />
+      <div style={{ width: "54px", height: "1px", background: "var(--ide-shell-border-strong)" }} />
     </div>
   );
 }
@@ -2216,7 +2390,7 @@ function VerticalResizeHandle({ onPointerDown }) {
           left: "50%",
           width: "1px",
           transform: "translateX(-50%)",
-          background: "rgba(58, 58, 68, 0.92)",
+          background: "var(--ide-shell-border-strong)",
         }}
       />
     </div>
@@ -2235,9 +2409,9 @@ function ActivityButton({ active = false, children, disabled = false, title, onC
         width: "100%",
         height: "42px",
         border: "none",
-        borderLeft: `2px solid ${active ? "#b48aea" : "transparent"}`,
-        background: active ? "rgba(180, 138, 234, 0.1)" : "transparent",
-        color: active ? "#f5fbff" : "#7e8794",
+        borderLeft: `2px solid ${active ? "var(--ide-shell-accent)" : "transparent"}`,
+        background: active ? "var(--ide-shell-selection)" : "transparent",
+        color: active ? "var(--ide-shell-text)" : "var(--ide-shell-muted)",
         display: "grid",
         placeItems: "center",
         cursor: disabled ? "default" : "pointer",
@@ -2262,10 +2436,10 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
         maxWidth: "228px",
         padding: "0 12px",
         border: "none",
-        borderTop: `1px solid ${active ? "#b48aea" : "transparent"}`,
-        borderRight: "1px solid #2a2a32",
-        background: active ? "#18181c" : "#111114",
-        color: active ? "#ffffff" : "#a7b1bc",
+        borderTop: `1px solid ${active ? "var(--ide-shell-accent)" : "transparent"}`,
+        borderRight: "1px solid var(--ide-shell-border)",
+        background: active ? "var(--ide-shell-panel)" : "var(--ide-shell-elevated)",
+        color: active ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
         display: "flex",
         alignItems: "center",
         gap: "8px",
@@ -2285,7 +2459,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           fontSize: "8px",
           fontWeight: 700,
           flexShrink: 0,
-          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
+          boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-border-strong) 34%, transparent)",
         }}
       >
         {visual.label}
@@ -2312,7 +2486,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           onClose();
         }}
         style={{
-          color: active ? "#9da3aa" : "#7b838d",
+          color: active ? "var(--ide-shell-text-soft)" : "var(--ide-shell-muted)",
           fontSize: "12px",
           lineHeight: 1,
           width: "16px",
@@ -2320,7 +2494,7 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
           display: "grid",
           placeItems: "center",
           borderRadius: "3px",
-          background: active ? "rgba(255,255,255,0.04)" : "transparent",
+          background: active ? "var(--ide-shell-accent-soft)" : "transparent",
         }}
       >
         ×
@@ -2337,9 +2511,9 @@ function BottomPanelTab({ active = false, children, onClick }) {
       onClick={onClick}
       style={{
         border: "none",
-        borderBottom: `1px solid ${active ? "#b48aea" : "transparent"}`,
+        borderBottom: `1px solid ${active ? "var(--ide-shell-accent)" : "transparent"}`,
         background: "transparent",
-        color: active ? "#ffffff" : "#77818d",
+        color: active ? "var(--ide-shell-text)" : "var(--ide-shell-muted)",
         padding: "0 15px",
         fontSize: "11px",
         fontWeight: 600,
@@ -2365,9 +2539,9 @@ function MobileHeaderTab({ active = false, filename, onSelect, onClose }) {
         maxWidth: "186px",
         padding: "0 12px",
         border: "none",
-        borderTop: `2px solid ${active ? "#b48aea" : "transparent"}`,
-        background: active ? "#18181c" : "#111114",
-        color: active ? "#ffffff" : "#8e98a6",
+        borderTop: `2px solid ${active ? "var(--ide-shell-accent)" : "transparent"}`,
+        background: active ? "var(--ide-shell-panel)" : "var(--ide-shell-elevated)",
+        color: active ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
         display: "flex",
         alignItems: "center",
         gap: "8px",
@@ -2417,8 +2591,8 @@ function MobileHeaderTab({ active = false, filename, onSelect, onClose }) {
           display: "grid",
           placeItems: "center",
           borderRadius: "3px",
-          color: active ? "#9ca3af" : "#6b7280",
-          background: active ? "rgba(255,255,255,0.04)" : "transparent",
+          color: active ? "var(--ide-shell-text-soft)" : "var(--ide-shell-muted)",
+          background: active ? "var(--ide-shell-accent-soft)" : "transparent",
           flexShrink: 0,
         }}
       >
@@ -2436,8 +2610,8 @@ function MobileNavButton({ active = false, label, children, onClick }) {
       onClick={onClick}
       style={{
         border: "none",
-        background: active ? "rgba(180, 138, 234, 0.12)" : "transparent",
-        color: active ? "#ececef" : "#8b8b96",
+        background: active ? "var(--ide-shell-selection)" : "transparent",
+        color: active ? "var(--ide-shell-text)" : "var(--ide-shell-muted)",
         borderRadius: "4px",
         display: "flex",
         flexDirection: "column",
@@ -2446,7 +2620,7 @@ function MobileNavButton({ active = false, label, children, onClick }) {
         gap: "6px",
         cursor: "pointer",
         transition: "background 160ms ease, color 160ms ease, transform 160ms ease",
-        boxShadow: active ? "inset 0 0 0 1px rgba(180, 138, 234, 0.14)" : "none",
+        boxShadow: active ? "inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-accent) 14%, transparent)" : "none",
       }}
     >
       <span
@@ -2476,9 +2650,9 @@ function mobileTopButtonStyle(active = false) {
   return {
     width: "36px",
     height: "36px",
-    border: "1px solid #2a2a32",
-    background: active ? "rgba(180, 138, 234, 0.12)" : "#111114",
-    color: active ? "#ececef" : "#c4c4cc",
+    border: "1px solid var(--ide-shell-border)",
+    background: active ? "var(--ide-shell-selection)" : "var(--ide-shell-elevated)",
+    color: active ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
     borderRadius: "4px",
     display: "grid",
     placeItems: "center",
@@ -2492,8 +2666,8 @@ function mobileSignalChipStyle(tone) {
     width: "28px",
     height: "28px",
     borderRadius: "4px",
-    background: "#111114",
-    border: "1px solid #2a2a32",
+    background: "var(--ide-shell-elevated)",
+    border: "1px solid var(--ide-shell-border)",
     display: "grid",
     placeItems: "center",
     color: tone,
@@ -2508,10 +2682,12 @@ function mobileRunButtonStyle(disabled = false) {
     bottom: `calc(${MOBILE_NAV_HEIGHT + MOBILE_STATUS_HEIGHT}px + 14px)`,
     width: "52px",
     height: "52px",
-    border: disabled ? "1px solid #3a3a44" : "1px solid rgba(180, 138, 234, 0.28)",
+    border: disabled
+      ? "1px solid var(--ide-shell-border-strong)"
+      : "1px solid color-mix(in srgb, var(--ide-shell-accent) 30%, transparent)",
     borderRadius: "4px",
-    background: disabled ? "#18181c" : "#b48aea",
-    color: disabled ? "#6d7480" : "#ffffff",
+    background: disabled ? "var(--ide-shell-panel)" : "var(--ide-shell-accent)",
+    color: disabled ? "var(--ide-shell-muted-strong)" : "var(--ide-shell-accent-contrast)",
     display: "grid",
     placeItems: "center",
     cursor: disabled ? "not-allowed" : "pointer",
@@ -2528,11 +2704,11 @@ function LogoMark() {
         borderRadius: "3px",
         display: "grid",
         placeItems: "center",
-        background: "linear-gradient(135deg, #b48aea 0%, #9a6dd4 100%)",
-        color: "#09090b",
+        background: "linear-gradient(135deg, var(--ide-shell-accent) 0%, var(--ide-shell-accent-strong) 100%)",
+        color: "var(--ide-shell-accent-contrast)",
         fontSize: "10px",
         fontWeight: 800,
-        border: "1px solid rgba(255,255,255,0.08)",
+        border: "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 26%, transparent)",
       }}
     >
       <span style={{ letterSpacing: "-0.04em" }}>W</span>
@@ -2552,10 +2728,10 @@ function ToolbarSearch({ value, onChange, onFocus }) {
         alignItems: "center",
         gap: "9px",
         padding: "0 12px",
-        background: "#111114",
-        border: "1px solid #2a2a32",
+        background: "var(--ide-shell-elevated)",
+        border: "1px solid var(--ide-shell-border)",
         borderRadius: "4px",
-        color: "#8b8b96",
+        color: "var(--ide-shell-muted)",
       }}
     >
       <SearchIcon />
@@ -2571,12 +2747,46 @@ function ToolbarSearch({ value, onChange, onFocus }) {
           border: "none",
           outline: "none",
           background: "transparent",
-          color: "#d4d4d4",
+          color: "var(--ide-shell-text)",
           fontSize: "12px",
           fontWeight: 500,
         }}
       />
     </label>
+  );
+}
+
+function ThemeToggleGlyph({ theme = "default" }) {
+  const active = theme === "inverted";
+
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: "relative",
+        width: "18px",
+        height: "18px",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "999px",
+        border: "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 60%, transparent)",
+        background: "color-mix(in srgb, var(--ide-shell-panel) 85%, transparent)",
+        boxShadow: "0 0 0 3px color-mix(in srgb, var(--ide-shell-accent-soft) 70%, transparent)",
+      }}
+    >
+      <span
+        style={{
+          width: "10px",
+          height: "10px",
+          borderRadius: "999px",
+          background: active
+            ? "linear-gradient(135deg, var(--ide-shell-accent) 0 50%, var(--ide-shell-panel) 50% 100%)"
+            : "linear-gradient(135deg, var(--ide-shell-panel) 0 50%, var(--ide-shell-accent) 50% 100%)",
+          transform: active ? "rotate(-10deg)" : "rotate(18deg)",
+          transition: "transform 220ms ease, background 220ms ease",
+        }}
+      />
+    </span>
   );
 }
 
@@ -2625,11 +2835,11 @@ function TerminalIcon() {
   );
 }
 
-function StatusPulseIcon({ tone = "#7dd8b0" }) {
+function StatusPulseIcon({ tone = "var(--ide-shell-success)" }) {
   return (
     <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.2" opacity="0.35" />
-      <rect x="5.25" y="5.25" width="5.5" height="5.5" rx="1.2" fill={tone} />
+      <rect x="5.25" y="5.25" width="5.5" height="5.5" rx="1.2" style={{ fill: tone }} />
     </svg>
   );
 }
@@ -2649,8 +2859,8 @@ function OutputPlaceholder({ activeFile }) {
         height: "100%",
         display: "grid",
         placeItems: "center",
-        background: "#09090b",
-        color: "#858585",
+        background: "var(--ide-shell-output-bg)",
+        color: "var(--ide-shell-muted)",
         padding: "24px",
         textAlign: "center",
       }}
@@ -2659,7 +2869,7 @@ function OutputPlaceholder({ activeFile }) {
         <div
           style={{
             display: "inline-block",
-            color: "#8b8b96",
+            color: "var(--ide-shell-muted)",
             fontSize: "10px",
             fontWeight: 700,
             letterSpacing: "0.14em",
@@ -2668,10 +2878,10 @@ function OutputPlaceholder({ activeFile }) {
         >
           Output
         </div>
-        <div style={{ marginTop: "14px", color: "#ececef", fontSize: "16px", fontWeight: 700, letterSpacing: "0.01em" }}>
+        <div style={{ marginTop: "14px", color: "var(--ide-shell-text)", fontSize: "16px", fontWeight: 700, letterSpacing: "0.01em" }}>
           SQL results appear here
         </div>
-        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.7, color: "#8b8b96" }}>
+        <div style={{ marginTop: "8px", fontSize: "12px", lineHeight: 1.7, color: "var(--ide-shell-muted)" }}>
           Run a `.sql` or `.pg` file to inspect result sets and schema output in this panel.
         </div>
       </div>
@@ -2687,7 +2897,7 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
         display: "grid",
         placeItems: "center",
         padding: isMobile ? "18px" : "24px",
-        background: "#09090b",
+        background: "var(--ide-shell-editor-bg)",
       }}
     >
       <div
@@ -2697,16 +2907,16 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
           padding: isMobile ? "18px" : "20px",
         }}
       >
-        <div style={{ color: "#8b8b96", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>
+        <div style={{ color: "var(--ide-shell-muted)", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>
           Workspace
         </div>
-        <div style={{ marginTop: "10px", color: "#c4c4cc", fontFamily: '"Cascadia Code", Consolas, monospace', fontSize: "12px" }}>
+        <div style={{ marginTop: "10px", color: "var(--ide-shell-text-soft)", fontFamily: '"Cascadia Code", Consolas, monospace', fontSize: "12px" }}>
           {workspaceName}
         </div>
-        <div style={{ color: "#ffffff", fontSize: isMobile ? "18px" : "20px", fontWeight: 700, marginTop: "18px" }}>
+        <div style={{ color: "var(--ide-shell-text)", fontSize: isMobile ? "18px" : "20px", fontWeight: 700, marginTop: "18px" }}>
           {hasFiles ? "Open a file to start editing" : "Create a file to begin"}
         </div>
-        <div style={{ color: "#8b8b96", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
+        <div style={{ color: "var(--ide-shell-muted)", fontSize: "13px", marginTop: "10px", lineHeight: 1.7 }}>
           {hasFiles
             ? "Select a file from the explorer to open it in the editor."
             : "Use the explorer to create a file. Files and runtime data persist locally."}
@@ -2716,10 +2926,13 @@ function EmptyEditorState({ workspaceName, hasFiles = false, isMobile = false })
   );
 }
 
-function terminalActionButtonStyle({ color = "#d4d4d4", border = "rgba(255,255,255,0.06)" } = {}) {
+function terminalActionButtonStyle({
+  color = "var(--ide-shell-text)",
+  border = "color-mix(in srgb, var(--ide-shell-border-strong) 30%, transparent)",
+} = {}) {
   return {
     border: `1px solid ${border}`,
-    background: "#18181c",
+    background: "var(--ide-shell-panel)",
     color,
     fontSize: "11px",
     cursor: "pointer",
@@ -2733,10 +2946,12 @@ function terminalActionButtonStyle({ color = "#d4d4d4", border = "rgba(255,255,2
 function runButtonStyle(disabled = false) {
   return {
     height: "28px",
-    border: disabled ? "1px solid #3a3a44" : "1px solid rgba(180, 138, 234, 0.22)",
+    border: disabled
+      ? "1px solid var(--ide-shell-border-strong)"
+      : "1px solid color-mix(in srgb, var(--ide-shell-accent) 26%, transparent)",
     borderRadius: "3px",
-    background: disabled ? "#18181c" : "#b48aea",
-    color: disabled ? "#7f8894" : "#ffffff",
+    background: disabled ? "var(--ide-shell-panel)" : "var(--ide-shell-accent)",
+    color: disabled ? "var(--ide-shell-muted-strong)" : "var(--ide-shell-accent-contrast)",
     padding: "0 14px",
     fontSize: "12px",
     fontWeight: 700,
@@ -2762,7 +2977,7 @@ function statusBarDividerStyle() {
   return {
     width: "1px",
     height: "12px",
-    background: "rgba(180,138,234,0.2)",
+    background: "color-mix(in srgb, var(--ide-shell-accent) 24%, transparent)",
     flexShrink: 0,
   };
 }
@@ -2797,14 +3012,14 @@ function WasmForgeShellGlobalStyles() {
         }
 
         .wasmforge-shell ::-webkit-scrollbar-thumb {
-          background: rgba(86, 86, 95, 0.38);
+          background: color-mix(in srgb, var(--ide-shell-border-strong) 72%, transparent);
           border-radius: 3px;
           border: 2px solid transparent;
           background-clip: padding-box;
         }
 
         .wasmforge-shell ::-webkit-scrollbar-thumb:hover {
-          background: rgba(139, 139, 150, 0.48);
+          background: color-mix(in srgb, var(--ide-shell-muted) 64%, transparent);
           background-clip: padding-box;
         }
 
@@ -2833,12 +3048,12 @@ function WasmForgeShellGlobalStyles() {
         .wasmforge-shell .wf-run-btn:hover:not(:disabled),
         .wasmforge-shell .wf-fab:hover:not(:disabled),
         .wasmforge-shell .wf-terminal-action:hover:not(:disabled) {
-          background: #222228;
+          background: var(--ide-shell-hover);
         }
 
         .wasmforge-shell .wf-tab:hover,
         .wasmforge-shell .wf-mobile-tab:hover {
-          background: #222228;
+          background: var(--ide-shell-hover);
         }
 
         .wasmforge-shell .wf-panel-tab:hover,
@@ -2846,17 +3061,17 @@ function WasmForgeShellGlobalStyles() {
         .wasmforge-shell .wf-mobile-nav-btn:hover,
         .wasmforge-shell .wf-terminal-action:hover,
         .wasmforge-shell .wf-toolbar-search:hover {
-          box-shadow: inset 0 0 0 1px rgba(180, 138, 234, 0.08);
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-accent) 12%, transparent);
         }
 
         .wasmforge-shell .wf-toolbar-search:focus-within {
-          border-color: rgba(180, 138, 234, 0.22);
-          box-shadow: inset 0 0 0 1px rgba(180, 138, 234, 0.12);
+          border-color: color-mix(in srgb, var(--ide-shell-accent) 30%, transparent);
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-accent) 16%, transparent);
         }
 
         .wasmforge-shell .wf-horizontal-handle:hover,
         .wasmforge-shell .wf-vertical-handle:hover {
-          background: rgba(180,138,234,0.05);
+          background: color-mix(in srgb, var(--ide-shell-accent) 8%, transparent);
         }
 
         .wasmforge-shell .wf-terminal-surface {
@@ -2874,16 +3089,16 @@ function WasmForgeShellGlobalStyles() {
 function getFileVisualMeta(filename = "") {
   switch (getFileExtension(filename)) {
     case "py":
-      return { label: "PY", accent: "#7dd8b0", surface: "rgba(70, 110, 91, 0.34)" };
+      return { label: "PY", accent: "var(--ide-file-py-accent)", surface: "var(--ide-file-py-surface)" };
     case "js":
-      return { label: "JS", accent: "#e8c872", surface: "rgba(91, 73, 33, 0.34)" };
+      return { label: "JS", accent: "var(--ide-file-js-accent)", surface: "var(--ide-file-js-surface)" };
     case "ts":
-      return { label: "TS", accent: "#72b4e8", surface: "rgba(44, 72, 96, 0.34)" };
+      return { label: "TS", accent: "var(--ide-file-ts-accent)", surface: "var(--ide-file-ts-surface)" };
     case "sql":
-      return { label: "SQL", accent: "#b48aea", surface: "rgba(78, 54, 97, 0.34)" };
+      return { label: "SQL", accent: "var(--ide-file-sql-accent)", surface: "var(--ide-file-sql-surface)" };
     case "pg":
-      return { label: "PG", accent: "#a88de8", surface: "rgba(66, 52, 88, 0.34)" };
+      return { label: "PG", accent: "var(--ide-file-pg-accent)", surface: "var(--ide-file-pg-surface)" };
     default:
-      return { label: "TXT", accent: "#afb7c2", surface: "rgba(55, 61, 69, 0.42)" };
+      return { label: "TXT", accent: "var(--ide-file-txt-accent)", surface: "var(--ide-file-txt-surface)" };
   }
 }

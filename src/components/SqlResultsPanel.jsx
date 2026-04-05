@@ -2,6 +2,27 @@ import { useEffect, useState } from 'react'
 import { getSqlEngineLabel } from '../utils/sqlRuntime.js'
 import SchemaInspector from './SchemaInspector.jsx'
 
+const PANEL_BG = 'var(--ide-shell-output-bg)'
+const PANEL_SURFACE = 'var(--ide-shell-panel-strong)'
+const PANEL_SUBTLE = 'var(--ide-shell-panel)'
+const PANEL_BORDER = 'var(--ide-shell-border)'
+const PANEL_BORDER_STRONG = 'var(--ide-shell-border-strong)'
+const PANEL_TEXT = 'var(--ide-shell-text)'
+const PANEL_MUTED = 'var(--ide-shell-muted)'
+const PANEL_ROW_ALT = 'color-mix(in srgb, var(--ide-shell-accent-soft) 50%, var(--ide-shell-panel))'
+const ACCENT_TONE = 'var(--ide-shell-accent)'
+const ACCENT_BG = 'color-mix(in srgb, var(--ide-shell-accent-soft) 78%, transparent)'
+const ACCENT_BORDER = 'color-mix(in srgb, var(--ide-shell-accent) 26%, transparent)'
+const SUCCESS_TONE = 'var(--ide-shell-success)'
+const SUCCESS_BG = 'color-mix(in srgb, var(--ide-shell-success) 14%, transparent)'
+const SUCCESS_BORDER = 'color-mix(in srgb, var(--ide-shell-success) 26%, transparent)'
+const WARNING_TONE = 'var(--ide-shell-warning)'
+const WARNING_BG = 'color-mix(in srgb, var(--ide-shell-warning) 14%, transparent)'
+const WARNING_BORDER = 'color-mix(in srgb, var(--ide-shell-warning) 26%, transparent)'
+const DANGER_TONE = 'var(--ide-shell-danger)'
+const DANGER_BG = 'color-mix(in srgb, var(--ide-shell-danger) 14%, transparent)'
+const DANGER_BORDER = 'color-mix(in srgb, var(--ide-shell-danger) 26%, transparent)'
+
 function formatCellValue(value) {
   if (value === null || value === undefined) {
     return 'NULL'
@@ -61,10 +82,10 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
   return (
     <div
       style={{
-        border: '1px solid #2a323b',
+        border: `1px solid ${PANEL_BORDER}`,
         borderRadius: '10px',
         overflow: 'hidden',
-        background: '#0d141c',
+        background: PANEL_BG,
       }}
     >
       <div
@@ -74,15 +95,15 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
           justifyContent: 'space-between',
           gap: '12px',
           padding: '12px 14px',
-          borderBottom: '1px solid #21262d',
-          background: '#101720',
+          borderBottom: `1px solid ${PANEL_BORDER}`,
+          background: PANEL_SUBTLE,
         }}
       >
         <div>
-          <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '13px' }}>
+          <div style={{ color: PANEL_TEXT, fontWeight: 700, fontSize: '13px' }}>
             {resultSet.title}
           </div>
-          <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '2px' }}>
+          <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '2px' }}>
             {resultSet.rowCount} row{resultSet.rowCount === 1 ? '' : 's'}
             {typeof resultSet.affectedRows === 'number'
               ? ` • ${resultSet.affectedRows} affected`
@@ -91,9 +112,9 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
         </div>
         <span
           style={{
-            color: resultSet.kind === 'summary' ? '#c8a35a' : '#9db9da',
-            background: resultSet.kind === 'summary' ? 'rgba(79, 63, 31, 0.4)' : 'rgba(40, 57, 79, 0.42)',
-            border: `1px solid ${resultSet.kind === 'summary' ? 'rgba(138, 110, 63, 0.34)' : 'rgba(109, 133, 163, 0.34)'}`,
+            color: resultSet.kind === 'summary' ? WARNING_TONE : ACCENT_TONE,
+            background: resultSet.kind === 'summary' ? WARNING_BG : ACCENT_BG,
+            border: `1px solid ${resultSet.kind === 'summary' ? WARNING_BORDER : ACCENT_BORDER}`,
             borderRadius: '8px',
             padding: '3px 8px',
             fontSize: '11px',
@@ -112,7 +133,7 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
             width: '100%',
             borderCollapse: 'collapse',
             fontSize: '12px',
-            color: '#c9d1d9',
+            color: PANEL_TEXT,
           }}
         >
           <thead>
@@ -128,18 +149,18 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
                     style={{
                       position: 'sticky',
                       top: 0,
-                      background: '#101720',
-                      color: isActive ? '#f0f6fc' : '#8b949e',
+                      background: PANEL_SUBTLE,
+                      color: isActive ? PANEL_TEXT : PANEL_MUTED,
                       textAlign: 'left',
                       padding: '10px 12px',
-                      borderBottom: '1px solid #21262d',
+                      borderBottom: `1px solid ${PANEL_BORDER}`,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
                       fontWeight: 700,
                     }}
                   >
                     <span>{column}</span>
-                    <span style={{ marginLeft: '8px', color: isActive ? '#9db9da' : '#6e7681' }}>
+                    <span style={{ marginLeft: '8px', color: isActive ? ACCENT_TONE : 'var(--ide-shell-muted-strong)' }}>
                       {direction}
                     </span>
                   </th>
@@ -153,7 +174,7 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
               <tr
                 key={`${resultSet.id}-row-${rowIndex}`}
                 style={{
-                  background: rowIndex % 2 === 0 ? '#0d141c' : '#101821',
+                  background: rowIndex % 2 === 0 ? PANEL_BG : PANEL_ROW_ALT,
                 }}
               >
                 {resultSet.columns.map((_, columnIndex) => (
@@ -161,11 +182,11 @@ function ResultTable({ resultSet, sortConfig, onSort }) {
                     key={`${resultSet.id}-${rowIndex}-${columnIndex}`}
                     style={{
                       padding: '10px 12px',
-                      borderBottom: '1px solid #161b22',
+                      borderBottom: `1px solid ${PANEL_BORDER}`,
                       verticalAlign: 'top',
                       fontFamily:
                         '"Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace',
-                      color: '#c9d1d9',
+                      color: PANEL_TEXT,
                       minWidth: '120px',
                     }}
                   >
@@ -237,17 +258,17 @@ export default function SqlResultsPanel({
       style={{
         height: '100%',
         overflowY: 'auto',
-        background: '#0d141c',
+        background: PANEL_BG,
         padding: '16px',
-        color: '#c9d1d9',
+        color: PANEL_TEXT,
       }}
     >
       <div
-        style={{
-          border: '1px solid #2a323b',
+      style={{
+          border: `1px solid ${PANEL_BORDER}`,
           borderRadius: '14px',
           padding: '16px',
-          background: '#0f161f',
+          background: PANEL_SURFACE,
           marginBottom: '16px',
         }}
       >
@@ -261,19 +282,19 @@ export default function SqlResultsPanel({
           }}
         >
           <div>
-            <div style={{ color: '#f0f6fc', fontSize: '16px', fontWeight: 800 }}>
+            <div style={{ color: PANEL_TEXT, fontSize: '16px', fontWeight: 800 }}>
               Query Results
             </div>
-            <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '4px' }}>
+            <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
               {status}
             </div>
           </div>
 
           <span
             style={{
-              color: engine === 'sqlite' ? '#9db9da' : '#9ec7a2',
-              background: engine === 'sqlite' ? 'rgba(40, 57, 79, 0.42)' : 'rgba(38, 59, 43, 0.44)',
-              border: `1px solid ${engine === 'sqlite' ? 'rgba(109, 133, 163, 0.34)' : 'rgba(90, 125, 97, 0.34)'}`,
+              color: engine === 'sqlite' ? ACCENT_TONE : SUCCESS_TONE,
+              background: engine === 'sqlite' ? ACCENT_BG : SUCCESS_BG,
+              border: `1px solid ${engine === 'sqlite' ? ACCENT_BORDER : SUCCESS_BORDER}`,
               borderRadius: '10px',
               padding: '4px 10px',
               fontSize: '11px',
@@ -294,17 +315,17 @@ export default function SqlResultsPanel({
             marginTop: '16px',
           }}
         >
-          <InfoTile label="Engine" value={engineLabel} tone={engine === 'sqlite' ? '#9db9da' : '#9ec7a2'} />
-          <InfoTile label="File" value={activeFile || 'No SQL file selected'} tone="#c8a35a" />
+          <InfoTile label="Engine" value={engineLabel} tone={engine === 'sqlite' ? ACCENT_TONE : SUCCESS_TONE} />
+          <InfoTile label="File" value={activeFile || 'No SQL file selected'} tone={WARNING_TONE} />
           <InfoTile
             label="Persistence"
             value="Browser storage (OPFS)"
-            tone="#cfa07a"
+            tone={WARNING_TONE}
           />
           <InfoTile
             label="Database"
             value={result?.databaseLabel || 'Created on first run'}
-            tone="#aab2c4"
+            tone="var(--ide-shell-text-soft)"
           />
         </div>
       </div>
@@ -314,33 +335,33 @@ export default function SqlResultsPanel({
       ) : null}
 
       {!isReady ? (
-        <StateCard title="Preparing engine" body={status} tone="#9db9da" />
+        <StateCard title="Preparing engine" body={status} tone={ACCENT_TONE} />
       ) : null}
 
       {isRunning ? (
-        <StateCard title="Running query" body={`${engineLabel} is executing your SQL.`} tone="#cfa07a" />
+        <StateCard title="Running query" body={`${engineLabel} is executing your SQL.`} tone={WARNING_TONE} />
       ) : null}
 
       {result?.recoveryMessage ? (
-        <StateCard title="Database recovered" body={result.recoveryMessage} tone="#c8a35a" />
+        <StateCard title="Database recovered" body={result.recoveryMessage} tone={WARNING_TONE} />
       ) : null}
 
       {result?.error ? (
-        <StateCard title={errorTitle} body={result.error} tone="#ff7b72" />
+        <StateCard title={errorTitle} body={result.error} tone={DANGER_TONE} />
       ) : null}
 
       {!result && !isRunning ? (
-        <StateCard title="Ready for query" body={placeholderMessage} tone="#8b949e" />
+        <StateCard title="Ready for query" body={placeholderMessage} tone={PANEL_MUTED} />
       ) : null}
 
       {hasSuccessfulResult && result?.durationMs ? (
-        <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '12px' }}>
+        <div style={{ color: PANEL_MUTED, fontSize: '12px', marginBottom: '12px' }}>
           Last run finished in {result.durationMs.toFixed(1)}ms.
         </div>
       ) : null}
 
       {hasSuccessfulResult && engine === 'sqlite' ? (
-        <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '12px' }}>
+        <div style={{ color: PANEL_MUTED, fontSize: '12px', marginBottom: '12px' }}>
           {result.restoredFromOpfs
             ? `Restored ${result.databaseLabel} from OPFS before executing this query.`
             : `Created or updated ${result.databaseLabel} and persisted it back to OPFS after execution.`}
@@ -348,7 +369,7 @@ export default function SqlResultsPanel({
       ) : null}
 
       {hasSuccessfulResult && engine === 'pglite' ? (
-        <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '12px' }}>
+        <div style={{ color: PANEL_MUTED, fontSize: '12px', marginBottom: '12px' }}>
           {result.recoveryMessage
             ? `PostgreSQL storage was reset and rebuilt for ${result.databaseLabel} before this query completed.`
             : result.restoredFromOpfs
@@ -375,10 +396,10 @@ function InfoTile({ label, value, tone }) {
   return (
     <div
       style={{
-        border: '1px solid #21262d',
+        border: `1px solid ${PANEL_BORDER}`,
         borderRadius: '10px',
         padding: '12px',
-        background: '#0c1219',
+        background: PANEL_BG,
       }}
     >
       <div
@@ -393,7 +414,7 @@ function InfoTile({ label, value, tone }) {
       >
         {label}
       </div>
-      <div style={{ color: '#f0f6fc', fontSize: '13px', fontWeight: 600 }}>
+      <div style={{ color: PANEL_TEXT, fontSize: '13px', fontWeight: 600 }}>
         {value}
       </div>
     </div>
@@ -404,18 +425,18 @@ function StateCard({ title, body, tone }) {
   return (
     <div
       style={{
-        border: `1px solid ${tone}30`,
+        border: `1px solid color-mix(in srgb, ${tone} 26%, transparent)`,
         borderLeft: `3px solid ${tone}`,
         borderRadius: '10px',
         padding: '14px 16px',
-        background: '#0f161f',
+        background: PANEL_SURFACE,
         marginBottom: '14px',
       }}
     >
-      <div style={{ color: '#f0f6fc', fontSize: '13px', fontWeight: 700 }}>
+      <div style={{ color: PANEL_TEXT, fontSize: '13px', fontWeight: 700 }}>
         {title}
       </div>
-      <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '5px', lineHeight: 1.5 }}>
+      <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '5px', lineHeight: 1.5 }}>
         {body}
       </div>
     </div>

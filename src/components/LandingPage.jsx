@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "../landing.css";
+import { persistAppTheme, readStoredAppTheme } from "../constants/theme.js";
 
 const heroEditorLines = [
   { line: 1, kind: "code", parts: [["kw", "import"], ["nm", " numpy "], ["kw", "as"], ["nm", " np"]] },
@@ -99,7 +100,6 @@ const stackGroups = [
 
 const revealSelector = ".wf-rv";
 const repositoryUrl = "https://github.com/Yumekaz/WasmForge";
-const landingThemeStorageKey = "wasmforge:landing-theme";
 const proofSteps = [
   "Open the IDE. Write a Python script, JavaScript file, or SQL query.",
   "Turn Wi-Fi off. Airplane Mode is the real test.",
@@ -116,15 +116,7 @@ function outputDelay(index) {
 }
 
 export default function LandingPage({ onOpenIde }) {
-  const [theme, setTheme] = useState(() => {
-    if (typeof window === "undefined") {
-      return "default";
-    }
-
-    return window.localStorage.getItem(landingThemeStorageKey) === "inverted"
-      ? "inverted"
-      : "default";
-  });
+  const [theme, setTheme] = useState(() => readStoredAppTheme());
   const [wifiOnline, setWifiOnline] = useState(true);
   const [visibleOutputCount, setVisibleOutputCount] = useState(0);
   const [themeTransition, setThemeTransition] = useState(null);
@@ -168,9 +160,32 @@ export default function LandingPage({ onOpenIde }) {
       return undefined;
     }
 
-    window.localStorage.setItem(landingThemeStorageKey, theme);
-    return undefined;
+    persistAppTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const syncTheme = (event) => {
+      setTheme(event.detail?.theme === "inverted" ? "inverted" : "default");
+    };
+
+    const syncThemeFromStorage = (event) => {
+      if (event.key && event.key !== "wasmforge:theme" && event.key !== "wasmforge:landing-theme") {
+        return;
+      }
+      setTheme(readStoredAppTheme());
+    };
+
+    window.addEventListener("wasmforge-theme-change", syncTheme);
+    window.addEventListener("storage", syncThemeFromStorage);
+    return () => {
+      window.removeEventListener("wasmforge-theme-change", syncTheme);
+      window.removeEventListener("storage", syncThemeFromStorage);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {

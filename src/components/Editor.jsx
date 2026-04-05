@@ -5,6 +5,7 @@ import { DEFAULT_PYTHON } from '../constants/defaultPython.js'
 
 const DEFAULT_RECOVERY_STORAGE_KEY = 'wasmforge:pending-workspace-writes'
 const WASMFORGE_EDITOR_THEME = 'wasmforge-night'
+const WASMFORGE_EDITOR_THEME_DAY = 'wasmforge-day'
 
 function defineWasmForgeTheme(monaco) {
   monaco.editor.defineTheme(WASMFORGE_EDITOR_THEME, {
@@ -79,6 +80,79 @@ function defineWasmForgeTheme(monaco) {
       { token: 'namespace', foreground: 'A88DE8' },
     ],
   })
+
+  monaco.editor.defineTheme(WASMFORGE_EDITOR_THEME_DAY, {
+    base: 'vs',
+    inherit: true,
+    semanticHighlighting: true,
+    colors: {
+      'editor.background': '#f3ede2',
+      'editor.foreground': '#32283c',
+      'editorLineNumber.foreground': '#a89db4',
+      'editorLineNumber.activeForeground': '#726583',
+      'editorCursor.foreground': '#7350a7',
+      'editor.selectionBackground': '#e7dfee',
+      'editor.inactiveSelectionBackground': '#eee7f2',
+      'editor.lineHighlightBackground': '#e5ebf1',
+      'editor.lineHighlightBorder': '#00000000',
+      'editorIndentGuide.background1': '#ddd4e6',
+      'editorIndentGuide.activeBackground1': '#c9bfd8',
+      'editorWhitespace.foreground': '#ddd4e6',
+      'editorBracketHighlight.foreground1': '#32283c',
+      'editorBracketHighlight.foreground2': '#7350a7',
+      'editorBracketHighlight.foreground3': '#8b6ab8',
+      'editorBracketHighlight.foreground4': '#61856d',
+      'editorBracketMatch.background': '#e6deee',
+      'editorBracketMatch.border': '#b49dcb',
+      'editor.findMatchBackground': '#d9cceb',
+      'editor.findMatchHighlightBackground': '#ece5f0',
+      'editor.wordHighlightBackground': '#ece4f1',
+      'editor.wordHighlightStrongBackground': '#e4d9ee',
+      'editorHoverWidget.background': '#efe8de',
+      'editorHoverWidget.border': '#d2c8d8',
+      'editorWidget.background': '#efe8de',
+      'editorWidget.border': '#d2c8d8',
+      'editorSuggestWidget.background': '#efe8de',
+      'editorSuggestWidget.border': '#d2c8d8',
+      'editorSuggestWidget.selectedBackground': '#e5ebf1',
+      'editorSuggestWidget.highlightForeground': '#7350a7',
+      'editorGutter.background': '#f3ede2',
+      'scrollbarSlider.background': '#c4b8d280',
+      'scrollbarSlider.hoverBackground': '#afa2c490',
+      'scrollbarSlider.activeBackground': '#9788aea0',
+      'minimap.background': '#f3ede2',
+      'editorStickyScroll.background': '#eee6dc',
+      'editorStickyScrollHover.background': '#e5ebf1',
+      'editorOverviewRuler.border': '#00000000',
+      'editorOverviewRuler.bracketMatchForeground': '#7350a7',
+      'editorInfo.foreground': '#7350a7',
+      'editorWarning.foreground': '#a7793e',
+      'editorError.foreground': '#b5645d',
+    },
+    rules: [
+      { token: 'comment', foreground: '8A8096', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '8050B0' },
+      { token: 'keyword.control', foreground: '8050B0' },
+      { token: 'storage', foreground: '8050B0' },
+      { token: 'storage.type', foreground: '7350A7' },
+      { token: 'string', foreground: '9D564F' },
+      { token: 'string.escape', foreground: 'A7793E' },
+      { token: 'number', foreground: '5D79A9' },
+      { token: 'constant.numeric', foreground: '5D79A9' },
+      { token: 'constant.language', foreground: '8B6AB8' },
+      { token: 'regexp', foreground: '9D564F' },
+      { token: 'operator', foreground: '32283C' },
+      { token: 'delimiter', foreground: '8C8298' },
+      { token: 'delimiter.bracket', foreground: '32283C' },
+      { token: 'entity.name.function', foreground: '68459A' },
+      { token: 'support.function', foreground: '68459A' },
+      { token: 'variable.parameter', foreground: '5E546C' },
+      { token: 'entity.name.type', foreground: '5E546C' },
+      { token: 'support.type', foreground: '5E546C' },
+      { token: 'type.identifier', foreground: '5E546C' },
+      { token: 'namespace', foreground: '8B6AB8' },
+    ],
+  })
 }
 
 function persistDraft(filename, content, storageKey = DEFAULT_RECOVERY_STORAGE_KEY) {
@@ -108,6 +182,7 @@ function Editor({
   language = 'python',
   readOnly = false,
   draftStorageKey = DEFAULT_RECOVERY_STORAGE_KEY,
+  themeMode = 'night',
 }) {
   const editorRef = useRef(null)
   const modelChangeDisposableRef = useRef(null)
@@ -151,7 +226,7 @@ function Editor({
       }}
       beforeMount={handleBeforeMount}
       onMount={handleMount}
-      theme={WASMFORGE_EDITOR_THEME}
+      theme={themeMode === 'day' ? WASMFORGE_EDITOR_THEME_DAY : WASMFORGE_EDITOR_THEME}
       options={{
         fontSize: 14,
         lineHeight: 23,

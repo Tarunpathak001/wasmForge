@@ -1,5 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 
+const PANEL_BG = 'var(--ide-shell-output-bg)'
+const PANEL_SURFACE = 'var(--ide-shell-panel-strong)'
+const PANEL_SUBTLE = 'var(--ide-shell-panel)'
+const PANEL_BORDER = 'var(--ide-shell-border)'
+const PANEL_BORDER_STRONG = 'var(--ide-shell-border-strong)'
+const PANEL_TEXT = 'var(--ide-shell-text)'
+const PANEL_MUTED = 'var(--ide-shell-muted)'
+const ACCENT_TONE = 'var(--ide-shell-accent)'
+const ACCENT_BG = 'color-mix(in srgb, var(--ide-shell-accent-soft) 78%, transparent)'
+const ACCENT_BORDER = 'color-mix(in srgb, var(--ide-shell-accent) 26%, transparent)'
+const WARNING_TONE = 'var(--ide-shell-warning)'
+const WARNING_BG = 'color-mix(in srgb, var(--ide-shell-warning) 14%, transparent)'
+const WARNING_BORDER = 'color-mix(in srgb, var(--ide-shell-warning) 26%, transparent)'
+const SUCCESS_TONE = 'var(--ide-shell-success)'
+const SUCCESS_BG = 'color-mix(in srgb, var(--ide-shell-success) 14%, transparent)'
+const SUCCESS_BORDER = 'color-mix(in srgb, var(--ide-shell-success) 26%, transparent)'
+
 function normalizeSchema(schema) {
   const tables = Array.isArray(schema?.tables) ? schema.tables : []
 
@@ -24,7 +41,7 @@ function Chevron({ open }) {
         display: 'inline-block',
         transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
         transition: 'transform 160ms ease',
-        color: '#8b949e',
+        color: PANEL_MUTED,
         width: '14px',
         textAlign: 'center',
         fontSize: '11px',
@@ -38,24 +55,24 @@ function Chevron({ open }) {
 function Pill({ children, tone = 'default' }) {
   const tones = {
     default: {
-      color: '#c9d1d9',
-      background: '#101720',
-      border: '#2a323b',
+      color: PANEL_TEXT,
+      background: PANEL_SUBTLE,
+      border: PANEL_BORDER,
     },
     accent: {
-      color: '#9db9da',
-      background: 'rgba(40, 57, 79, 0.42)',
-      border: 'rgba(109, 133, 163, 0.34)',
+      color: ACCENT_TONE,
+      background: ACCENT_BG,
+      border: ACCENT_BORDER,
     },
     warm: {
-      color: '#c8a35a',
-      background: 'rgba(79, 63, 31, 0.4)',
-      border: 'rgba(138, 110, 63, 0.34)',
+      color: WARNING_TONE,
+      background: WARNING_BG,
+      border: WARNING_BORDER,
     },
     green: {
-      color: '#9ec7a2',
-      background: 'rgba(38, 59, 43, 0.44)',
-      border: 'rgba(90, 125, 97, 0.34)',
+      color: SUCCESS_TONE,
+      background: SUCCESS_BG,
+      border: SUCCESS_BORDER,
     },
   }
 
@@ -108,18 +125,18 @@ function TreeRow({
           marginLeft: `${indent * 16}px`,
           border: '1px solid transparent',
           borderRadius: '10px',
-          background: open ? 'rgba(95, 112, 140, 0.12)' : 'transparent',
-          color: '#c9d1d9',
+          background: open ? ACCENT_BG : 'transparent',
+          color: PANEL_TEXT,
           cursor: 'pointer',
           textAlign: 'left',
           transition: 'background 160ms ease, border-color 160ms ease',
         }}
         onMouseEnter={(event) => {
-          event.currentTarget.style.background = open ? 'rgba(95, 112, 140, 0.16)' : 'rgba(17, 22, 29, 0.9)'
-          event.currentTarget.style.borderColor = '#21262d'
+          event.currentTarget.style.background = open ? ACCENT_BG : 'var(--ide-shell-hover)'
+          event.currentTarget.style.borderColor = PANEL_BORDER
         }}
         onMouseLeave={(event) => {
-          event.currentTarget.style.background = open ? 'rgba(95, 112, 140, 0.12)' : 'transparent'
+          event.currentTarget.style.background = open ? ACCENT_BG : 'transparent'
           event.currentTarget.style.borderColor = 'transparent'
         }}
       >
@@ -131,16 +148,16 @@ function TreeRow({
             display: 'inline-grid',
             placeItems: 'center',
             borderRadius: '8px',
-            background: '#11161d',
-            border: '1px solid #2a323b',
+            background: PANEL_BG,
+            border: `1px solid ${PANEL_BORDER}`,
             color:
               tone === 'accent'
-                ? '#9db9da'
+                ? ACCENT_TONE
                 : tone === 'warm'
-                  ? '#c8a35a'
+                  ? WARNING_TONE
                   : tone === 'green'
-                    ? '#9ec7a2'
-                    : '#8b949e',
+                    ? SUCCESS_TONE
+                    : PANEL_MUTED,
             fontSize: '12px',
             fontWeight: 800,
           }}
@@ -151,7 +168,7 @@ function TreeRow({
           <span
             style={{
               display: 'block',
-              color: '#f0f6fc',
+              color: PANEL_TEXT,
               fontSize: '13px',
               fontWeight: 700,
               overflow: 'hidden',
@@ -164,7 +181,7 @@ function TreeRow({
           <span
             style={{
               display: 'block',
-              color: '#8b949e',
+              color: PANEL_MUTED,
               fontSize: '11px',
               marginTop: '2px',
               overflow: 'hidden',
@@ -192,13 +209,13 @@ function ColumnRow({ column, indent = 0 }) {
         gap: '12px',
         marginLeft: `${indent * 16 + 22}px`,
         padding: '8px 12px',
-        borderLeft: '1px solid #21262d',
+        borderLeft: `1px solid ${PANEL_BORDER}`,
       }}
     >
       <div style={{ minWidth: 0 }}>
         <div
           style={{
-            color: '#c9d1d9',
+            color: PANEL_TEXT,
             fontSize: '13px',
             fontWeight: 600,
             overflow: 'hidden',
@@ -208,7 +225,7 @@ function ColumnRow({ column, indent = 0 }) {
         >
           {column.name}
         </div>
-        <div style={{ color: '#8b949e', fontSize: '11px', marginTop: '2px' }}>
+        <div style={{ color: PANEL_MUTED, fontSize: '11px', marginTop: '2px' }}>
           Column
         </div>
       </div>
@@ -254,9 +271,9 @@ export default function SchemaInspector({ schema }) {
     return (
       <div
         style={{
-          border: '1px solid #2a323b',
+          border: `1px solid ${PANEL_BORDER}`,
           borderRadius: '14px',
-          background: '#0f161f',
+          background: PANEL_SURFACE,
           marginBottom: '16px',
           overflow: 'hidden',
         }}
@@ -264,7 +281,7 @@ export default function SchemaInspector({ schema }) {
         <div
           style={{
             padding: '16px',
-            borderBottom: '1px solid #21262d',
+            borderBottom: `1px solid ${PANEL_BORDER}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -273,10 +290,10 @@ export default function SchemaInspector({ schema }) {
           }}
         >
           <div>
-            <div style={{ color: '#f0f6fc', fontSize: '15px', fontWeight: 800 }}>
+            <div style={{ color: PANEL_TEXT, fontSize: '15px', fontWeight: 800 }}>
               Schema Inspector
             </div>
-            <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '4px' }}>
+            <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
               Waiting for SQL execution to expose a schema.
             </div>
           </div>
@@ -289,9 +306,9 @@ export default function SchemaInspector({ schema }) {
   return (
     <div
       style={{
-        border: '1px solid #2a323b',
+        border: `1px solid ${PANEL_BORDER}`,
         borderRadius: '14px',
-        background: '#0f161f',
+        background: PANEL_SURFACE,
         marginBottom: '16px',
         overflow: 'hidden',
       }}
@@ -299,7 +316,7 @@ export default function SchemaInspector({ schema }) {
       <div
         style={{
           padding: '16px',
-          borderBottom: '1px solid #21262d',
+          borderBottom: `1px solid ${PANEL_BORDER}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -308,10 +325,10 @@ export default function SchemaInspector({ schema }) {
         }}
       >
         <div>
-          <div style={{ color: '#f0f6fc', fontSize: '15px', fontWeight: 800 }}>
+          <div style={{ color: PANEL_TEXT, fontSize: '15px', fontWeight: 800 }}>
             Schema Inspector
           </div>
-          <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '4px' }}>
+          <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
             Auto-discovered from the latest SQL execution.
           </div>
         </div>
@@ -357,7 +374,7 @@ export default function SchemaInspector({ schema }) {
                   style={{
                     marginLeft: '14px',
                     paddingLeft: '12px',
-                    borderLeft: '1px solid #21262d',
+                    borderLeft: `1px solid ${PANEL_BORDER}`,
                     display: 'grid',
                     gap: '6px',
                   }}
@@ -371,7 +388,7 @@ export default function SchemaInspector({ schema }) {
                       padding: '2px 12px 6px 0',
                     }}
                   >
-                    <span style={{ color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    <span style={{ color: PANEL_MUTED, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                       Columns
                     </span>
                     <Pill tone={table.type === 'view' ? 'warm' : 'green'}>{table.type}</Pill>
@@ -386,9 +403,9 @@ export default function SchemaInspector({ schema }) {
                       style={{
                         marginLeft: '22px',
                         padding: '10px 12px',
-                        color: '#8b949e',
+                        color: PANEL_MUTED,
                         fontSize: '12px',
-                        borderLeft: '1px dashed #30363d',
+                        borderLeft: `1px dashed ${PANEL_BORDER_STRONG}`,
                       }}
                     >
                       No columns detected for this object.

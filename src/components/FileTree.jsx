@@ -199,8 +199,8 @@ function FileTree({
       style={{
         width: "100%",
         height: "100%",
-        background: "#111114",
-        color: "#ececef",
+        background: "var(--ide-shell-elevated)",
+        color: "var(--ide-shell-text)",
         display: "flex",
         flexDirection: "column",
         position: "relative",
@@ -225,7 +225,7 @@ function FileTree({
           }
 
           .wf-file-tree ::-webkit-scrollbar-thumb {
-            background: rgba(86, 86, 95, 0.38);
+            background: color-mix(in srgb, var(--ide-shell-border-strong) 72%, transparent);
             border-radius: 3px;
           }
         `}
@@ -234,8 +234,8 @@ function FileTree({
       <div
         style={{
           padding: "12px 12px 14px",
-          borderBottom: "1px solid #2a2a32",
-          background: "#111114",
+          borderBottom: "1px solid var(--ide-shell-border)",
+          background: "var(--ide-shell-elevated)",
           flexShrink: 0,
           position: "relative",
           zIndex: 2,
@@ -243,7 +243,7 @@ function FileTree({
       >
         <div
           style={{
-            color: "#8b8b96",
+            color: "var(--ide-shell-muted)",
             fontSize: "10px",
             letterSpacing: "0.18em",
             textTransform: "uppercase",
@@ -258,9 +258,9 @@ function FileTree({
           style={{
             marginTop: "10px",
             padding: "10px 12px 12px",
-            border: "1px solid #2a2a32",
+            border: "1px solid var(--ide-shell-border)",
             borderRadius: "4px",
-            background: "#18181c",
+            background: "var(--ide-shell-panel)",
             display: "grid",
             gap: "10px",
           }}
@@ -285,7 +285,7 @@ function FileTree({
             <div
               style={{
                 marginTop: "6px",
-                color: "#ececef",
+                color: "var(--ide-shell-text)",
                 fontSize: "15px",
                 fontWeight: 700,
                 letterSpacing: "0.01em",
@@ -331,7 +331,7 @@ function FileTree({
                 borderRadius: "4px",
                 display: "grid",
                 placeItems: "center",
-                background: "rgba(180,138,234,0.12)",
+                background: "var(--ide-shell-accent-soft)",
                 fontSize: "13px",
                 lineHeight: 1,
               }}
@@ -345,7 +345,7 @@ function FileTree({
         <div
           style={{
             marginTop: "14px",
-            color: "#8b8b96",
+            color: "var(--ide-shell-muted)",
             fontSize: "10px",
             letterSpacing: "0.14em",
             textTransform: "uppercase",
@@ -357,7 +357,7 @@ function FileTree({
           }}
         >
           <span>{mode === "search" ? "Results" : "Files"}</span>
-          <span style={{ color: "#56565f", fontSize: "9px", letterSpacing: "0.1em" }}>
+          <span style={{ color: "var(--ide-shell-muted-strong)", fontSize: "9px", letterSpacing: "0.1em" }}>
             {mode === "search"
               ? `${visibleFiles.length} match${visibleFiles.length === 1 ? "" : "es"}`
               : `${orderedFiles.length} file${orderedFiles.length === 1 ? "" : "s"}`}
@@ -369,9 +369,9 @@ function FileTree({
             style={{
               marginTop: "10px",
               padding: "12px 12px 10px",
-              border: "1px solid #2a2a32",
+              border: "1px solid var(--ide-shell-border)",
               borderRadius: "4px",
-              background: "#18181c",
+              background: "var(--ide-shell-panel)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -388,7 +388,7 @@ function FileTree({
             <div
               style={{
                 marginTop: "8px",
-                color: "#8b8b96",
+                color: "var(--ide-shell-muted)",
                 fontSize: "11px",
                 lineHeight: 1.5,
               }}
@@ -425,7 +425,7 @@ function FileTree({
                         width: "8px",
                         height: "2px",
                         borderRadius: "1px",
-                        background: isActive ? "#b48aea" : "#56565f",
+                        background: isActive ? "var(--ide-shell-accent)" : "var(--ide-shell-muted-strong)",
                         flexShrink: 0,
                       }}
                     />
@@ -444,7 +444,13 @@ function FileTree({
               })}
             </div>
 
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: "10px", paddingTop: "10px" }}>
+            <div
+              style={{
+                borderTop: "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 26%, transparent)",
+                marginTop: "10px",
+                paddingTop: "10px",
+              }}
+            >
               <div style={menuSectionLabelStyle}>New Workspace</div>
               <div style={{ display: "flex", gap: "6px" }}>
                 <input
@@ -475,11 +481,11 @@ function FileTree({
                 </button>
               </div>
               {workspaceFeedback ? (
-                <div style={{ marginTop: "8px", color: "#f48771", fontSize: "11px", lineHeight: 1.4 }}>
+                <div style={{ marginTop: "8px", color: "var(--ide-shell-danger)", fontSize: "11px", lineHeight: 1.4 }}>
                   {workspaceFeedback}
                 </div>
               ) : (
-                <div style={{ marginTop: "8px", color: "#858585", fontSize: "11px", lineHeight: 1.4 }}>
+                <div style={{ marginTop: "8px", color: "var(--ide-shell-muted)", fontSize: "11px", lineHeight: 1.4 }}>
                   Keep names short. No slashes.
                 </div>
               )}
@@ -528,18 +534,18 @@ function FileTree({
         ) : null}
 
         {orderedFiles.length === 0 && !isCreating ? (
-          <div style={{ padding: "18px 12px", color: "#8b8b96", fontSize: "12px", lineHeight: 1.55 }}>
+          <div style={{ padding: "18px 12px", color: "var(--ide-shell-muted)", fontSize: "12px", lineHeight: 1.55 }}>
             Create a file to begin.
-            <div style={{ marginTop: "6px", color: "#56565f", fontSize: "11px" }}>
+            <div style={{ marginTop: "6px", color: "var(--ide-shell-muted-strong)", fontSize: "11px" }}>
               Files and runtime data persist locally.
             </div>
           </div>
         ) : null}
 
         {orderedFiles.length > 0 && visibleFiles.length === 0 ? (
-          <div style={{ padding: "18px 12px", color: "#8b8b96", fontSize: "12px", lineHeight: 1.55 }}>
+          <div style={{ padding: "18px 12px", color: "var(--ide-shell-muted)", fontSize: "12px", lineHeight: 1.55 }}>
             No files match "{searchQuery}".
-            <div style={{ marginTop: "6px", color: "#56565f", fontSize: "11px" }}>
+            <div style={{ marginTop: "6px", color: "var(--ide-shell-muted-strong)", fontSize: "11px" }}>
               Try `main`, `.ts`, `.sql`, or `.pg`.
             </div>
           </div>
@@ -597,8 +603,8 @@ function FileTree({
         style={{
           flexShrink: 0,
           padding: "10px 12px 12px",
-          borderTop: "1px solid #2a2a32",
-          background: "#111114",
+          borderTop: "1px solid var(--ide-shell-border)",
+          background: "var(--ide-shell-elevated)",
         }}
       >
         <div
@@ -606,12 +612,12 @@ function FileTree({
             display: "flex",
             alignItems: "center",
             gap: "8px",
-            color: "#8b8b96",
+            color: "var(--ide-shell-muted)",
             fontSize: "11px",
             lineHeight: 1.5,
           }}
         >
-          <span style={{ width: "8px", height: "2px", borderRadius: "1px", background: "#7dd8b0", flexShrink: 0 }} />
+          <span style={{ width: "8px", height: "2px", borderRadius: "1px", background: "var(--ide-shell-success)", flexShrink: 0 }} />
           Saved locally
         </div>
       </div>
@@ -681,12 +687,16 @@ function FileItem({
         padding: "0 9px 0 11px",
         margin: "0 8px",
         border: "1px solid",
-        borderColor: isActive ? "rgba(180, 138, 234, 0.18)" : isHovered ? "rgba(255,255,255,0.06)" : "transparent",
-        background: isActive ? "#18181c" : isHovered ? "#222228" : "transparent",
-        color: isActive ? "#ececef" : "#c4c4cc",
+        borderColor: isActive
+          ? "color-mix(in srgb, var(--ide-shell-accent) 22%, transparent)"
+          : isHovered
+            ? "color-mix(in srgb, var(--ide-shell-border-strong) 24%, transparent)"
+            : "transparent",
+        background: isActive ? "var(--ide-shell-selection)" : isHovered ? "var(--ide-shell-hover)" : "transparent",
+        color: isActive ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
         cursor: disabled ? "default" : "pointer",
         borderRadius: "4px",
-        boxShadow: isActive ? "inset 2px 0 0 #b48aea" : "none",
+        boxShadow: isActive ? "inset 2px 0 0 var(--ide-shell-accent)" : "none",
         transition: "background 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
       }}
     >
@@ -720,7 +730,7 @@ function FileItem({
               fontSize: "12px",
               fontWeight: isActive ? 700 : 600,
               lineHeight: 1,
-              color: isActive ? "#ececef" : "#c4c4cc",
+              color: isActive ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
             }}
             title={file.name}
           >
@@ -756,8 +766,8 @@ function MenuItem({ label, onClick, danger = false }) {
       style={{
         width: "100%",
         border: "none",
-        background: hovered ? "rgba(255,255,255,0.05)" : "transparent",
-        color: danger ? "#f48771" : "#ececef",
+        background: hovered ? "var(--ide-shell-hover)" : "transparent",
+        color: danger ? "var(--ide-shell-danger)" : "var(--ide-shell-text)",
         textAlign: "left",
         padding: "9px 12px",
         fontSize: "12px",
@@ -780,9 +790,9 @@ function InlineRow({ meta, children }) {
         gap: "8px",
         padding: "0 9px 0 11px",
         margin: "0 8px",
-        background: "#18181c",
+        background: "var(--ide-shell-selection)",
         borderRadius: "4px",
-        boxShadow: "inset 2px 0 0 #b48aea",
+        boxShadow: "inset 2px 0 0 var(--ide-shell-accent)",
       }}
     >
       <FileGlyph meta={meta} />
@@ -806,7 +816,7 @@ function FileGlyph({ meta }) {
         fontWeight: 700,
         letterSpacing: "0.03em",
         flexShrink: 0,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
+        boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-border-strong) 28%, transparent)",
       }}
       aria-hidden="true"
     >
@@ -818,8 +828,8 @@ function FileGlyph({ meta }) {
 function SearchGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="6.75" cy="6.75" r="3.75" stroke="#8b8b96" strokeWidth="1.2" />
-      <path d="m9.75 9.75 3 3" stroke="#8b8b96" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="6.75" cy="6.75" r="3.75" stroke="var(--ide-shell-muted)" strokeWidth="1.2" />
+      <path d="m9.75 9.75 3 3" stroke="var(--ide-shell-muted)" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -845,17 +855,17 @@ function getFileMeta(filename) {
 
   switch (extension) {
     case "py":
-      return { label: "PY", accent: "#7dd8b0", surface: "rgba(70, 110, 91, 0.34)" };
+      return { label: "PY", accent: "var(--ide-file-py-accent)", surface: "var(--ide-file-py-surface)" };
     case "js":
-      return { label: "JS", accent: "#e8c872", surface: "rgba(91, 73, 33, 0.34)" };
+      return { label: "JS", accent: "var(--ide-file-js-accent)", surface: "var(--ide-file-js-surface)" };
     case "ts":
-      return { label: "TS", accent: "#72b4e8", surface: "rgba(44, 72, 96, 0.34)" };
+      return { label: "TS", accent: "var(--ide-file-ts-accent)", surface: "var(--ide-file-ts-surface)" };
     case "sql":
-      return { label: "SQL", accent: "#b48aea", surface: "rgba(78, 54, 97, 0.34)" };
+      return { label: "SQL", accent: "var(--ide-file-sql-accent)", surface: "var(--ide-file-sql-surface)" };
     case "pg":
-      return { label: "PG", accent: "#a88de8", surface: "rgba(66, 52, 88, 0.34)" };
+      return { label: "PG", accent: "var(--ide-file-pg-accent)", surface: "var(--ide-file-pg-surface)" };
     default:
-      return { label: "TXT", accent: "#afb7c2", surface: "rgba(55, 61, 69, 0.42)" };
+      return { label: "TXT", accent: "var(--ide-file-txt-accent)", surface: "var(--ide-file-txt-surface)" };
   }
 }
 
@@ -870,8 +880,8 @@ function getContextMenuStyle(contextMenu) {
     left: `${left}px`,
     top: `${top}px`,
     minWidth: "160px",
-    border: "1px solid #2a2a32",
-    background: "#111114",
+    border: "1px solid var(--ide-shell-border)",
+    background: "var(--ide-shell-elevated)",
     boxShadow: "0 16px 30px rgba(0, 0, 0, 0.34)",
     zIndex: 40,
     padding: "6px 0",
@@ -880,7 +890,7 @@ function getContextMenuStyle(contextMenu) {
 }
 
 const menuSectionLabelStyle = {
-  color: "#c4c4cc",
+  color: "var(--ide-shell-text-soft)",
   fontSize: "10px",
   fontWeight: 700,
   textTransform: "uppercase",
@@ -890,9 +900,9 @@ const menuSectionLabelStyle = {
 
 const inlineInputStyle = {
   width: "100%",
-  border: "1px solid rgba(180, 138, 234, 0.28)",
-  background: "#09090b",
-  color: "#ececef",
+  border: "1px solid color-mix(in srgb, var(--ide-shell-accent) 28%, transparent)",
+  background: "var(--ide-shell-editor-bg)",
+  color: "var(--ide-shell-text)",
   fontFamily: '"Cascadia Code", Consolas, monospace',
   fontSize: "12px",
   padding: "5px 8px",
@@ -906,7 +916,7 @@ const searchInputStyle = {
   minWidth: 0,
   border: "none",
   background: "transparent",
-  color: "#ececef",
+  color: "var(--ide-shell-text)",
   fontSize: "12px",
   outline: "none",
   padding: 0,
@@ -917,8 +927,8 @@ const workspaceMenuStyle = {
   top: "144px",
   left: "8px",
   right: "8px",
-  border: "1px solid #2a2a32",
-  background: "#111114",
+  border: "1px solid var(--ide-shell-border)",
+  background: "var(--ide-shell-elevated)",
   boxShadow: "0 16px 30px rgba(0, 0, 0, 0.34)",
   padding: "12px",
   zIndex: 30,
@@ -930,7 +940,7 @@ function workspaceCardButtonStyle(disabled = false) {
     width: "100%",
     border: "none",
     background: "transparent",
-    color: "#ececef",
+    color: "var(--ide-shell-text)",
     padding: "0",
     textAlign: "left",
     cursor: disabled ? "default" : "pointer",
@@ -942,7 +952,7 @@ function workspaceCardButtonStyle(disabled = false) {
 }
 
 const workspaceCardLabelStyle = {
-  color: "#8b8b96",
+  color: "var(--ide-shell-muted)",
   fontSize: "10px",
   textTransform: "uppercase",
   letterSpacing: "0.16em",
@@ -953,7 +963,7 @@ const workspaceCardMetaStyle = {
   display: "flex",
   alignItems: "center",
   gap: "8px",
-  color: "#8b8b96",
+  color: "var(--ide-shell-muted)",
   fontSize: "10px",
   whiteSpace: "nowrap",
   overflow: "hidden",
@@ -964,7 +974,7 @@ const workspaceCardDotStyle = {
   width: "6px",
   height: "2px",
   borderRadius: "1px",
-  background: "#56565f",
+  background: "var(--ide-shell-muted-strong)",
   flexShrink: 0,
 };
 
@@ -972,9 +982,11 @@ function createFileButtonStyle(disabled = false) {
   return {
     width: "100%",
     height: "34px",
-    border: disabled ? "1px solid #2a2a32" : "1px solid rgba(180, 138, 234, 0.18)",
-    background: disabled ? "#18181c" : "#222228",
-    color: disabled ? "#8b8b96" : "#ececef",
+    border: disabled
+      ? "1px solid var(--ide-shell-border)"
+      : "1px solid color-mix(in srgb, var(--ide-shell-accent) 18%, transparent)",
+    background: disabled ? "var(--ide-shell-panel)" : "var(--ide-shell-hover)",
+    color: disabled ? "var(--ide-shell-muted)" : "var(--ide-shell-text)",
     cursor: disabled ? "default" : "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -990,9 +1002,9 @@ function createFileButtonStyle(disabled = false) {
 const workspaceInputStyle = {
   flex: 1,
   minWidth: 0,
-  border: "1px solid #2a2a32",
-  background: "#09090b",
-  color: "#ececef",
+  border: "1px solid var(--ide-shell-border)",
+  background: "var(--ide-shell-editor-bg)",
+  color: "var(--ide-shell-text)",
   fontSize: "12px",
   padding: "8px 10px",
   outline: "none",
@@ -1001,9 +1013,9 @@ const workspaceInputStyle = {
 
 function workspaceCreateButtonStyle(disabled = false) {
   return {
-    border: "1px solid rgba(180, 138, 234, 0.18)",
-    background: disabled ? "#222228" : "#b48aea",
-    color: "#ffffff",
+    border: "1px solid color-mix(in srgb, var(--ide-shell-accent) 18%, transparent)",
+    background: disabled ? "var(--ide-shell-hover)" : "var(--ide-shell-accent)",
+    color: "var(--ide-shell-accent-contrast)",
     padding: "0 12px",
     fontSize: "12px",
     cursor: disabled ? "not-allowed" : "pointer",
@@ -1019,7 +1031,7 @@ function workspaceToggleButtonStyle(disabled = false) {
     minWidth: 0,
     border: "none",
     background: "transparent",
-    color: "#ececef",
+    color: "var(--ide-shell-text)",
     padding: "2px 0 4px",
     textAlign: "left",
     display: "flex",
@@ -1032,9 +1044,9 @@ function workspaceToggleButtonStyle(disabled = false) {
 function workspaceMenuItemStyle(active = false) {
   return {
     height: "30px",
-    border: `1px solid ${active ? "rgba(180, 138, 234, 0.18)" : "transparent"}`,
-    background: active ? "#18181c" : "transparent",
-    color: active ? "#ececef" : "#c4c4cc",
+    border: `1px solid ${active ? "color-mix(in srgb, var(--ide-shell-accent) 18%, transparent)" : "transparent"}`,
+    background: active ? "var(--ide-shell-selection)" : "transparent",
+    color: active ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
     textAlign: "left",
     padding: "0 10px",
     cursor: "pointer",
@@ -1050,9 +1062,9 @@ function headerIconButtonStyle(disabled = false) {
   return {
     width: "24px",
     height: "24px",
-    border: "1px solid rgba(255,255,255,0.05)",
-    background: "rgba(255,255,255,0.02)",
-    color: disabled ? "#56565f" : "#c4c4cc",
+    border: "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 24%, transparent)",
+    background: "color-mix(in srgb, var(--ide-shell-panel) 88%, transparent)",
+    color: disabled ? "var(--ide-shell-muted-strong)" : "var(--ide-shell-text-soft)",
     cursor: disabled ? "default" : "pointer",
     fontSize: "16px",
     lineHeight: 1,
@@ -1066,9 +1078,9 @@ function fileActionButtonStyle(visible = false) {
   return {
     width: "22px",
     height: "22px",
-    border: "1px solid rgba(255,255,255,0.04)",
-    background: visible ? "#222228" : "transparent",
-    color: "#8b8b96",
+    border: "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 18%, transparent)",
+    background: visible ? "var(--ide-shell-hover)" : "transparent",
+    color: "var(--ide-shell-muted)",
     cursor: "pointer",
     opacity: visible ? 1 : 0,
     transition: "opacity 120ms ease, background 120ms ease",

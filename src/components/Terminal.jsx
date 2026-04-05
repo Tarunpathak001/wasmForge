@@ -30,7 +30,57 @@ function hasRenderableCells(xterm) {
   return Boolean(cell?.width && cell?.height)
 }
 
-const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, ref) {
+function getTerminalTheme(themeMode) {
+  if (themeMode === 'day') {
+    return {
+      background: '#f0e9df',
+      foreground: '#4a3f56',
+      cursor: '#7350a7',
+      selectionBackground: '#e4d9ec',
+      black: '#f0e9df',
+      red: '#b5645d',
+      green: '#61856d',
+      yellow: '#a7793e',
+      blue: '#5d79a9',
+      magenta: '#7350a7',
+      cyan: '#61856d',
+      white: '#32283c',
+      brightBlack: '#9f94aa',
+      brightRed: '#c1746b',
+      brightGreen: '#70917c',
+      brightYellow: '#b4884b',
+      brightBlue: '#6d88b7',
+      brightMagenta: '#8a6ab8',
+      brightCyan: '#70917c',
+      brightWhite: '#2a2132',
+    }
+  }
+
+  return {
+    background: '#09090b',
+    foreground: '#c4cad6',
+    cursor: '#b48aea',
+    selectionBackground: '#36265e',
+    black: '#09090b',
+    red: '#e87272',
+    green: '#7dd8b0',
+    yellow: '#e8c872',
+    blue: '#72b4e8',
+    magenta: '#a88de8',
+    cyan: '#7dd8b0',
+    white: '#ececef',
+    brightBlack: '#56565f',
+    brightRed: '#f08080',
+    brightGreen: '#9be4c5',
+    brightYellow: '#f0d592',
+    brightBlue: '#93c8f0',
+    brightMagenta: '#c8b0f0',
+    brightCyan: '#9be4c5',
+    brightWhite: '#f5f1fa',
+  }
+}
+
+const Terminal = forwardRef(function Terminal({ onResize, isVisible = true, themeMode = 'night' }, ref) {
   const containerRef = useRef(null)
   const xtermRef = useRef(null)
   const fitAddonRef = useRef(null)
@@ -185,28 +235,7 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
     }
 
     const xterm = new XTerm({
-      theme: {
-        background: '#09090b',
-        foreground: '#c4cad6',
-        cursor: '#b48aea',
-        selectionBackground: '#36265e',
-        black: '#09090b',
-        red: '#e87272',
-        green: '#7dd8b0',
-        yellow: '#e8c872',
-        blue: '#72b4e8',
-        magenta: '#a88de8',
-        cyan: '#7dd8b0',
-        white: '#ececef',
-        brightBlack: '#56565f',
-        brightRed: '#f08080',
-        brightGreen: '#9be4c5',
-        brightYellow: '#f0d592',
-        brightBlue: '#93c8f0',
-        brightMagenta: '#c8b0f0',
-        brightCyan: '#9be4c5',
-        brightWhite: '#f5f1fa',
-      },
+      theme: getTerminalTheme(themeMode),
       fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace',
       fontSize: 13,
       lineHeight: 1.4,
@@ -330,6 +359,15 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
   }, [onResize])
 
   useEffect(() => {
+    const xterm = xtermRef.current
+    if (!xterm) {
+      return
+    }
+
+    xterm.options.theme = getTerminalTheme(themeMode)
+  }, [themeMode])
+
+  useEffect(() => {
     if (!isVisible) {
       return undefined
     }
@@ -349,7 +387,7 @@ const Terminal = forwardRef(function Terminal({ onResize, isVisible = true }, re
       style={{
         width: '100%',
         height: '100%',
-        background: '#09090b',
+        background: themeMode === 'day' ? 'var(--ide-shell-output-bg)' : 'var(--ide-shell-editor-bg)',
         padding: '12px 14px 10px',
         boxSizing: 'border-box',
         borderRadius: 0,

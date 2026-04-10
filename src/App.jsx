@@ -502,6 +502,18 @@ function getRuntimeLanguageLabel(runtime, filename = "") {
   }
 }
 
+function formatExecutionDuration(durationMs) {
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) {
+    return "";
+  }
+
+  if (durationMs < 1000) {
+    return `${durationMs.toFixed(1)}ms`;
+  }
+
+  return `${(durationMs / 1000).toFixed(2)}s`;
+}
+
 function getStatusBarTone(activeRuntime, activeStatusMessage, activeRuntimeRunning, activeHasError, activeRuntimeReady, isAwaitingInput) {
   if (activeHasError) {
     return "var(--ide-shell-danger)";
@@ -1053,7 +1065,13 @@ export default function App({ onNavigateHome }) {
 
       setStatus("Python ready");
       if (!error) {
-        terminalRef.current?.writeln("\x1b[90m\n[Process completed]\x1b[0m");
+        const durationLabel = formatExecutionDuration(durationMs);
+        if (durationLabel) {
+          terminalRef.current?.writeln(
+            `\x1b[36m\n[Local runtime] Executed on this device in ${durationLabel}.\x1b[0m`,
+          );
+        }
+        terminalRef.current?.writeln("\x1b[90m[Process completed]\x1b[0m");
       }
     },
     [refreshWorkspaceFiles, reportWorkspaceError],
@@ -1929,6 +1947,17 @@ export default function App({ onNavigateHome }) {
     isAwaitingInput,
   );
   const currentLanguageLabel = getRuntimeLanguageLabel(activeRuntime, activeFile);
+  const activePythonDurationLabel = formatExecutionDuration(activePythonResult?.durationMs);
+  const activePythonLocalProofLabel =
+    activeRuntime === "python" &&
+    !activeRuntimeRunning &&
+    !activeHasError &&
+    activePythonDurationLabel
+      ? `Local run ${activePythonDurationLabel}`
+      : "";
+  const mobileStatusLabel = activePythonLocalProofLabel
+    ? `${activeStatusMessage} • ${activePythonLocalProofLabel}`
+    : activeStatusMessage;
   const shareButtonDisabled = !activeFile;
 
   useEffect(() => {
@@ -2574,7 +2603,7 @@ export default function App({ onNavigateHome }) {
                 }}
               />
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {activeStatusMessage}
+                {mobileStatusLabel}
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
@@ -2762,6 +2791,23 @@ export default function App({ onNavigateHome }) {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+            {activePythonLocalProofLabel ? (
+              <>
+                <span style={statusBarDividerStyle()} />
+                <span style={{ ...statusBarTokenStyle(), color: "var(--ide-shell-accent)", fontWeight: 600 }}>
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "999px",
+                      background: "var(--ide-shell-accent)",
+                      flexShrink: 0,
+                    }}
+                  />
+                  {activePythonLocalProofLabel}
+                </span>
+              </>
+            ) : null}
             <span style={statusBarTokenStyle()}>{currentLanguageLabel}</span>
             <span style={statusBarDividerStyle()} />
             <span style={statusBarTokenStyle()}>⚡ Offline-ready</span>

@@ -315,6 +315,11 @@ export default function PythonOutputPanel({
   const executedAtLabel = formatTimestamp(result?.executedAt)
   const fileLabel = result?.filename || activeFile || 'No Python file selected'
   const statusTone = getStatusTone({ isReady, isRunning, hasError, hasFigures })
+  const localExecutionLabel = durationLabel
+    ? `Executed on this device in ${durationLabel}`
+    : isRunning
+      ? 'Python is executing inside a local browser worker.'
+      : 'Python runs inside a local browser worker on this device.'
 
   const emptyMessage = activeFile
     ? `Run ${activeFile} to render Matplotlib figures here.`
@@ -365,6 +370,23 @@ export default function PythonOutputPanel({
             {hasError ? 'Error' : isRunning ? 'Running' : hasFigures ? 'Figures ready' : 'Idle'}
           </Chip>
         </div>
+
+        {!hasError ? (
+          <div
+            style={{
+              marginTop: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <Chip tone={durationLabel ? 'accent' : isRunning ? 'warning' : 'default'}>Local runtime</Chip>
+            <span style={{ color: PANEL_MUTED_STRONG, fontSize: '12px', lineHeight: 1.5 }}>
+              {localExecutionLabel}
+            </span>
+          </div>
+        ) : null}
 
         <div
           style={{

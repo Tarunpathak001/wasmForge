@@ -80,6 +80,31 @@ async function waitForTerminalText(page, text) {
   return locator.textContent();
 }
 
+async function verifyPythonExecutionProof(page) {
+  await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Local runtime", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Duration", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Executed", { exact: true }).waitFor({ timeout: 20000 });
+  await page.waitForFunction(
+    () => {
+      const text = document.body.innerText.toLowerCase();
+      return (
+        text.includes("python output") &&
+        text.includes("executed on this device in") &&
+        text.includes("duration") &&
+        text.includes("executed") &&
+        /\b\d+(?:\.\d+)?(?:ms|s)\b/.test(text) &&
+        !text.includes("not available yet") &&
+        !text.includes("waiting for a run")
+      );
+    },
+    undefined,
+    { timeout: 20000 },
+  );
+  await page.getByText("TERMINAL", { exact: true }).click();
+}
+
 async function verifyPython(page) {
   await createFile(page, "verify.py");
   await setEditorValue(page, 'name = input("Name: ")\nprint(f"py-ok {name}")\n');
@@ -88,6 +113,9 @@ async function verifyPython(page) {
   await page.keyboard.insertText("WasmForge");
   await page.keyboard.press("Enter");
   await waitForTerminalText(page, "py-ok WasmForge");
+  await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
+  await page.getByText(/^Local run /).first().waitFor({ timeout: 20000 });
+  await verifyPythonExecutionProof(page);
 }
 
 async function verifyJavaScript(page) {
@@ -114,6 +142,7 @@ async function verifyMatplotlib(page) {
   await clickRun(page);
   await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 60000 });
   await page.locator('img[alt*="Figure"]').first().waitFor({ timeout: 60000 });
+  await verifyPythonExecutionProof(page);
 }
 
 async function verifySqlite(page) {
@@ -184,6 +213,7 @@ async function main() {
       ideUrl,
       workspace: verificationWorkspace,
       python: "ok",
+      pythonExecutionProof: "ok",
       javascript: "ok",
       typescript: "ok",
       matplotlib: "ok",

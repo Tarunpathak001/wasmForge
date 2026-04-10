@@ -87,6 +87,31 @@ async function waitForTerminalText(page, text, timeout = 20000) {
   );
 }
 
+async function verifyPythonExecutionProof(page) {
+  await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Local runtime", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Duration", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Executed", { exact: true }).waitFor({ timeout: 20000 });
+  await page.waitForFunction(
+    () => {
+      const text = document.body.innerText.toLowerCase();
+      return (
+        text.includes("python output") &&
+        text.includes("executed on this device in") &&
+        text.includes("duration") &&
+        text.includes("executed") &&
+        /\b\d+(?:\.\d+)?(?:ms|s)\b/.test(text) &&
+        !text.includes("not available yet") &&
+        !text.includes("waiting for a run")
+      );
+    },
+    undefined,
+    { timeout: 20000 },
+  );
+  await page.getByText("TERMINAL", { exact: true }).click();
+}
+
 async function waitForFigure(page, timeout = 60000) {
   await page.getByText("Python Output", { exact: true }).waitFor({ timeout });
   await page.locator('img[alt*="Figure"]').first().waitFor({ timeout });
@@ -179,6 +204,9 @@ async function verifyOfflinePythonFlow(page) {
   await page.keyboard.insertText("cached");
   await page.keyboard.press("Enter");
   await waitForTerminalText(page, "offline-ok 3 cached");
+  await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
+  await page.getByText(/^Local run /).first().waitFor({ timeout: 20000 });
+  await verifyPythonExecutionProof(page);
 
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
   await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
@@ -190,6 +218,7 @@ async function verifyOfflinePythonFlow(page) {
   await page.keyboard.insertText("reload");
   await page.keyboard.press("Enter");
   await waitForTerminalText(page, "offline-ok 3 reload");
+  await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
 
   await page.context().setOffline(false);
 }
@@ -203,6 +232,7 @@ async function verifyMatplotlibOfflineFlow(page) {
 
   await clickRun(page);
   await waitForFigure(page);
+  await verifyPythonExecutionProof(page);
 
   await page.context().setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
@@ -211,6 +241,7 @@ async function verifyMatplotlibOfflineFlow(page) {
   await page.getByText("plot.py", { exact: true }).first().click();
   await clickRun(page);
   await waitForFigure(page);
+  await verifyPythonExecutionProof(page);
   await page.context().setOffline(false);
 }
 
@@ -242,6 +273,7 @@ async function verifyPythonWatchdog(page) {
   await setEditorValue(page, 'print("watchdog-ok")\n');
   await clickRun(page);
   await waitForTerminalText(page, "watchdog-ok");
+  await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
 }
 
 async function verifySqlitePersistence(page) {
@@ -333,6 +365,7 @@ async function verifyRestartedState(page) {
   await page.keyboard.insertText("restart");
   await page.keyboard.press("Enter");
   await waitForTerminalText(page, "offline-ok 3 restart");
+  await verifyPythonExecutionProof(page);
   await page.context().setOffline(false);
 }
 
@@ -374,6 +407,7 @@ async function main() {
 
     await verifyOfflinePythonFlow(page);
     report.offlinePython = "ok";
+    report.pythonExecutionProof = "ok";
 
     await verifyMatplotlibOfflineFlow(page);
     report.offlineMatplotlib = "ok";

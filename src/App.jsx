@@ -37,7 +37,7 @@ const MOBILE_TABBAR_HEIGHT = 44;
 const MOBILE_NAV_HEIGHT = 76;
 const MOBILE_STATUS_HEIGHT = 24;
 const MOBILE_DOCKED_PANEL_HEIGHT = 228;
-const MIN_EDITOR_PANEL_HEIGHT = 220;
+const MIN_EDITOR_PANEL_HEIGHT = 96;
 const MIN_TERMINAL_PANEL_HEIGHT = 160;
 const DEFAULT_EDITOR_RATIO = 0.65;
 const Editor = lazy(() => import("./components/Editor.jsx"));

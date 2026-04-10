@@ -22,6 +22,7 @@ export function usePyodideWorker({
   workspaceName = 'python-experiments',
   onStdout,
   onStderr,
+  onFigures,
   onReady,
   onDone,
   onProgress,
@@ -36,6 +37,7 @@ export function usePyodideWorker({
   const stdinBytesViewRef = useRef(null)
   const onStdoutRef = useRef(onStdout)
   const onStderrRef = useRef(onStderr)
+  const onFiguresRef = useRef(onFigures)
   const onReadyRef = useRef(onReady)
   const onDoneRef = useRef(onDone)
   const onProgressRef = useRef(onProgress)
@@ -52,6 +54,10 @@ export function usePyodideWorker({
   useEffect(() => {
     onStderrRef.current = onStderr
   }, [onStderr])
+
+  useEffect(() => {
+    onFiguresRef.current = onFigures
+  }, [onFigures])
 
   useEffect(() => {
     onReadyRef.current = onReady
@@ -118,7 +124,7 @@ export function usePyodideWorker({
 
       setIsReady(false)
       setIsRunning(false)
-      onDoneRef.current?.('Timeout: infinite loop killed')
+      onDoneRef.current?.({ error: 'Timeout: infinite loop killed' })
 
       // Respawn clean worker automatically.
       spawnWorkerRef.current?.()
@@ -143,7 +149,7 @@ export function usePyodideWorker({
     )
 
     worker.onmessage = (event) => {
-      const { type, data, msg, error, prompt } = event.data
+      const { type, data, msg, error, prompt, figures, durationMs } = event.data
 
       switch (type) {
         case 'ready':
@@ -163,6 +169,10 @@ export function usePyodideWorker({
 
         case 'stderr':
           onStderrRef.current?.(data)
+          break
+
+        case 'figures':
+          onFiguresRef.current?.(figures ?? [])
           break
 
         case 'load_progress':
@@ -187,7 +197,7 @@ export function usePyodideWorker({
           awaitingInputRef.current = false
           setIsAwaitingInput(false)
           setIsRunning(false)
-          onDoneRef.current?.(error)
+          onDoneRef.current?.({ error, durationMs })
           break
 
         default:
@@ -290,7 +300,7 @@ export function usePyodideWorker({
     onStderrRef.current?.('\n[WasmForge] Execution killed by user.\n')
     setIsReady(false)
     setIsRunning(false)
-    onDoneRef.current?.('Killed by user')
+    onDoneRef.current?.({ error: 'Killed by user' })
     spawnWorkerRef.current?.()
   }, [clearWatchdog])
 

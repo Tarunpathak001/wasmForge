@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import Terminal from "./components/Terminal.jsx";
 import FileTree from "./components/FileTree.jsx";
 import SqlResultsPanel from "./components/SqlResultsPanel.jsx";
+import PythonOutputPanel from "./components/PythonOutputPanel.jsx";
 import { usePyodideWorker } from "./hooks/usePyodideWorker.js";
 import { useIOWorker } from "./hooks/useIOWorker.js";
 import { useJsWorker } from "./hooks/useJsWorker.js";
@@ -247,6 +248,38 @@ function createEmptySqlExecution() {
   };
 }
 
+function createEmptyPythonExecution() {
+  return {
+    filename: "",
+    figures: [],
+    error: "",
+    durationMs: null,
+    executedAt: null,
+  };
+}
+
+function normalizePythonFigures(figures = []) {
+  if (!Array.isArray(figures)) {
+    return [];
+  }
+
+  return figures.flatMap((figure, index) => {
+    const data = typeof figure?.data === "string" ? figure.data.trim() : "";
+    if (!data) {
+      return [];
+    }
+
+    const format = String(figure?.format || "png").trim().toLowerCase() || "png";
+    const id = String(figure?.id || `Figure ${index + 1}`).trim() || `Figure ${index + 1}`;
+
+    return [{
+      id,
+      format,
+      dataUrl: `data:image/${format};base64,${data}`,
+    }];
+  });
+}
+
 function isMissingWorkspaceFileError(error) {
   const message = error?.message || String(error);
   return error?.name === "NotFoundError" || /could not be found/i.test(message);
@@ -360,6 +393,7 @@ export default function App({ onNavigateHome }) {
   const [openFiles, setOpenFiles] = useState([]);
   const [status, setStatus] = useState("Loading workspace...");
   const [sqlExecution, setSqlExecution] = useState(createEmptySqlExecution);
+  const [pythonExecution, setPythonExecution] = useState(createEmptyPythonExecution);
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspace, setActiveWorkspace] = useState(readPersistedActiveWorkspace);
   const [workspaceBootstrapped, setWorkspaceBootstrapped] = useState(false);
@@ -805,7 +839,13 @@ export default function App({ onNavigateHome }) {
     [listFiles, readFile, replaceFileList, upsertFileContent, writeFile],
   );
   const handlePythonDone = useCallback(
-    (error) => {
+    (doneResult = {}) => {
+      const error = typeof doneResult === "string" ? doneResult : doneResult?.error;
+      const durationMs = typeof doneResult === "object" ? doneResult?.durationMs : null;
+      const shouldTreatAsFailure = Boolean(
+        error && error !== "Killed by user" && !error.startsWith("Timeout"),
+      );
+
       terminalRef.current?.cancelInput({ newline: false });
       refreshWorkspaceFiles(activeFileRef.current, {
         workspaceName: activeWorkspaceRef.current,
@@ -815,7 +855,20 @@ export default function App({ onNavigateHome }) {
         );
       });
 
-      if (error && error !== "Killed by user" && !error.startsWith("Timeout")) {
+      setPythonExecution((previous) => {
+        if (previous.filename !== activeFileRef.current) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          error: shouldTreatAsFailure ? error : "",
+          durationMs: typeof durationMs === "number" ? durationMs : previous.durationMs,
+          executedAt: previous.executedAt || Date.now(),
+        };
+      });
+
+      if (shouldTreatAsFailure) {
         setStatus("Error");
         return;
       }
@@ -885,6 +938,25 @@ export default function App({ onNavigateHome }) {
     workspaceName: activeWorkspace,
     onStdout: writeStdout,
     onStderr: writeStderr,
+    onFigures: (figures) => {
+      const normalizedFigures = normalizePythonFigures(figures);
+      if (normalizedFigures.length === 0) {
+        return;
+      }
+
+      const filename = activeFileRef.current;
+      setPythonExecution((previous) => ({
+        ...createEmptyPythonExecution(),
+        filename,
+        error: previous.filename === filename ? previous.error : "",
+        durationMs: previous.filename === filename ? previous.durationMs : null,
+        executedAt: previous.filename === filename && previous.executedAt
+          ? previous.executedAt
+          : Date.now(),
+        figures: normalizedFigures,
+      }));
+      setBottomPanelMode("output");
+    },
     onReady: ({ stdinSupported, workspaceName } = {}) => {
       setStatus("Python ready");
       terminalRef.current?.writeln(
@@ -1254,6 +1326,11 @@ export default function App({ onNavigateHome }) {
           return;
         }
         await flushAllWrites();
+        setPythonExecution({
+          ...createEmptyPythonExecution(),
+          filename: activeFile,
+          executedAt: Date.now(),
+        });
         runCode({ filename: activeFile, code: codeToRun });
         setStatus("Running...");
         return;
@@ -1350,6 +1427,7 @@ export default function App({ onNavigateHome }) {
 
     await prepareWorkspaceMutation("switching workspaces");
     setSqlExecution(createEmptySqlExecution());
+    setPythonExecution(createEmptyPythonExecution());
     setOpenFiles([]);
     setFiles([]);
     setActiveFile("");
@@ -1371,6 +1449,7 @@ export default function App({ onNavigateHome }) {
     nextWorkspaces.sort((left, right) => left.localeCompare(right));
     setWorkspaces(nextWorkspaces);
     setSqlExecution(createEmptySqlExecution());
+    setPythonExecution(createEmptyPythonExecution());
     setOpenFiles([]);
     setFiles([]);
     setActiveFile("");
@@ -1491,8 +1570,10 @@ export default function App({ onNavigateHome }) {
   const activeFileData = files.find((file) => file.name === activeFile);
   const isMobileLayout = viewportWidth < MOBILE_LAYOUT_BREAKPOINT;
   const activeRuntime = getRuntimeKind(activeFile);
-  const showResultsPanel = activeRuntime === "sqlite" || activeRuntime === "pglite";
+  const showSqlResultsPanel = activeRuntime === "sqlite" || activeRuntime === "pglite";
+  const showPythonOutputPanel = activeRuntime === "python";
   const activeSqlResult = sqlExecution.filename === activeFile ? sqlExecution : null;
+  const activePythonResult = pythonExecution.filename === activeFile ? pythonExecution : null;
   const activeRuntimeReady =
     activeRuntime === "python"
       ? isReady
@@ -1527,7 +1608,7 @@ export default function App({ onNavigateHome }) {
             : status;
   const activeHasError =
     activeRuntime === "python"
-      ? status === "Error"
+      ? status === "Error" || Boolean(activePythonResult?.error)
       : activeRuntime === "javascript"
         ? jsStatus === "Execution failed" || jsStatus === "JavaScript unavailable"
         : Boolean(activeSqlResult?.error);
@@ -1548,8 +1629,8 @@ export default function App({ onNavigateHome }) {
   const currentLanguageLabel = getRuntimeLanguageLabel(activeRuntime, activeFile);
 
   useEffect(() => {
-    setBottomPanelMode(showResultsPanel ? "output" : "terminal");
-  }, [activeFile, showResultsPanel]);
+    setBottomPanelMode(showSqlResultsPanel ? "output" : "terminal");
+  }, [activeFile, showSqlResultsPanel]);
 
   useEffect(() => {
     if (!isMobileLayout) {
@@ -1756,8 +1837,12 @@ export default function App({ onNavigateHome }) {
           <button
             type="button"
             onClick={() => {
-              if (bottomPanelMode === "output" && showResultsPanel) {
+              if (bottomPanelMode === "output" && showSqlResultsPanel) {
                 setSqlExecution(createEmptySqlExecution());
+                return;
+              }
+              if (bottomPanelMode === "output" && showPythonOutputPanel) {
+                setPythonExecution(createEmptyPythonExecution());
                 return;
               }
               terminalRef.current?.clear?.();
@@ -1788,7 +1873,7 @@ export default function App({ onNavigateHome }) {
           <Terminal ref={terminalRef} isVisible={terminalVisible} themeMode={ideTheme === "inverted" ? "day" : "night"} />
         </div>
         <div style={{ display: outputVisible ? "block" : "none", height: "100%" }}>
-          {showResultsPanel ? (
+          {showSqlResultsPanel ? (
             <SqlResultsPanel
               activeFile={activeFile}
               engine={activeRuntime}
@@ -1797,6 +1882,14 @@ export default function App({ onNavigateHome }) {
               isRunning={activeRuntimeRunning}
               status={activeStatusMessage}
               schema={activeSqlResult?.schema}
+            />
+          ) : showPythonOutputPanel ? (
+            <PythonOutputPanel
+              activeFile={activeFile}
+              result={activePythonResult}
+              isReady={activeRuntimeReady}
+              isRunning={activeRuntimeRunning}
+              status={activeStatusMessage}
             />
           ) : (
             <OutputPlaceholder activeFile={activeFile} />

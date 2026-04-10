@@ -105,6 +105,17 @@ async function verifyTypeScript(page) {
   await waitForTerminalText(page, "ts-ok 5");
 }
 
+async function verifyMatplotlib(page) {
+  await createFile(page, "verify-plot.py");
+  await setEditorValue(
+    page,
+    'import matplotlib.pyplot as plt\nplt.plot([1, 2, 3], [1, 4, 9])\nplt.title("WasmForge Plot")\nplt.xlabel("x")\nplt.ylabel("y")\nplt.show()\n',
+  );
+  await clickRun(page);
+  await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 60000 });
+  await page.locator('img[alt*="Figure"]').first().waitFor({ timeout: 60000 });
+}
+
 async function verifySqlite(page) {
   await createFile(page, "verify.sql");
   await setEditorValue(page, "create table if not exists people (name text);\ndelete from people;\ninsert into people (name) values ('Ada');\nselect name from people;\n");
@@ -158,6 +169,7 @@ async function main() {
     await verifyPython(page);
     await verifyJavaScript(page);
     await verifyTypeScript(page);
+    await verifyMatplotlib(page);
     await verifySqlite(page);
     await verifyPglite(page);
     await verifyPersistence(page);
@@ -174,6 +186,7 @@ async function main() {
       python: "ok",
       javascript: "ok",
       typescript: "ok",
+      matplotlib: "ok",
       sqlite: "ok",
       pglite: "ok",
       persistence: "ok",

@@ -19,11 +19,27 @@ const STDIN_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * STDIN_HEADER_INTS
 const PACKAGE_IMPORT_PATTERNS = [
   { packageName: 'pandas', pattern: /^\s*(?:from\s+pandas\b|import\s+pandas\b)/m },
   { packageName: 'numpy', pattern: /^\s*(?:from\s+numpy\b|import\s+numpy\b)/m },
+  {
+    packageName: 'matplotlib',
+    pattern: /^\s*(?:from\s+matplotlib(?:\.[\w.]+)?\b|import\s+matplotlib(?:\.[\w.]+)?\b|from\s+pylab\b|import\s+pylab\b)/m,
+  },
 ]
 
 function normalizeErrorMessage(err) {
   const message = err?.message || String(err)
   return message.replace(/\n?PythonError\s*$/u, '')
+}
+
+function collectRequestedPackages(source = '') {
+  const packages = new Set()
+
+  for (const { packageName, pattern } of PACKAGE_IMPORT_PATTERNS) {
+    if (pattern.test(source)) {
+      packages.add(packageName)
+    }
+  }
+
+  return packages
 }
 
 function flushBufferedOutput() {
@@ -216,21 +232,103 @@ async function persistWorkspaceToOpfs() {
   }
 }
 
-async function ensureLocalPackages(code) {
-  if (!code) {
-    return
+async function ensureLocalPackages(code, filename = 'main.py') {
+  const requiredPackages = collectRequestedPackages(code)
+
+  const workspaceFiles = pyodide.FS
+    .readdir('/workspace')
+    .filter((name) => name.endsWith('.py') && name !== filename)
+
+  for (const workspaceFilename of workspaceFiles) {
+    try {
+      const source = pyodide.FS.readFile(`/workspace/${workspaceFilename}`, { encoding: 'utf8' })
+      for (const packageName of collectRequestedPackages(source)) {
+        requiredPackages.add(packageName)
+      }
+    } catch {
+      // Ignore unreadable files and continue with the files we can scan.
+    }
   }
 
-  const packagesToLoad = PACKAGE_IMPORT_PATTERNS
-    .filter(({ pattern }) => pattern.test(code))
-    .map(({ packageName }) => packageName)
-
-  if (packagesToLoad.length === 0) {
-    return
+  const packagesToLoad = [...requiredPackages]
+  if (packagesToLoad.length > 0) {
+    self.postMessage({ type: 'load_progress', msg: 'Loading required Python packages...' })
+    await pyodide.loadPackage(packagesToLoad)
   }
 
-  self.postMessage({ type: 'load_progress', msg: 'Loading required Python packages...' })
-  await pyodide.loadPackage(packagesToLoad)
+  return {
+    usesMatplotlib: requiredPackages.has('matplotlib'),
+  }
+}
+
+async function configureMatplotlibBackend() {
+  await pyodide.runPythonAsync(`
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+except Exception as exc:
+    postStderr(f"[WasmForge] Failed to prepare Matplotlib: {exc}\\n")
+  `)
+}
+
+async function resetMatplotlibState() {
+  await pyodide.runPythonAsync(`
+try:
+    import sys
+    if any(name.startswith("matplotlib") for name in sys.modules):
+        import matplotlib.pyplot as plt
+        plt.close("all")
+except Exception:
+    pass
+  `)
+}
+
+async function collectMatplotlibFigures() {
+  const serialized = await pyodide.runPythonAsync(`
+import base64
+import io
+import json
+import sys
+
+results = []
+
+try:
+    if any(name.startswith("matplotlib") for name in sys.modules):
+        import matplotlib.pyplot as plt
+
+        for figure_number in plt.get_fignums():
+            figure = plt.figure(figure_number)
+            buffer = io.BytesIO()
+            figure.savefig(buffer, format="png", bbox_inches="tight")
+            buffer.seek(0)
+            results.append({
+                "id": f"Figure {figure_number}",
+                "format": "png",
+                "data": base64.b64encode(buffer.read()).decode("ascii"),
+            })
+
+        plt.close("all")
+except Exception as exc:
+    postStderr(f"[WasmForge] Failed to capture Matplotlib output: {exc}\\n")
+    try:
+        import matplotlib.pyplot as plt
+        plt.close("all")
+    except Exception:
+        pass
+
+json.dumps(results)
+  `)
+
+  if (!serialized) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(serialized)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 async function initPyodide() {
@@ -312,14 +410,23 @@ async function runPython(code, filename = 'main.py') {
   startFlushInterval()
 
   let error = null
+  const startedAt = performance.now()
+  let usesMatplotlib = false
 
   try {
     await mountWorkspace()
     await syncWorkspaceFromOpfs()
-    await ensureLocalPackages(code)
 
     const workspacePath = `/workspace/${filename}`
     pyodide.FS.writeFile(workspacePath, code, { encoding: 'utf8' })
+
+    const packageState = await ensureLocalPackages(code, filename)
+    usesMatplotlib = packageState.usesMatplotlib
+
+    if (usesMatplotlib) {
+      await configureMatplotlibBackend()
+      await resetMatplotlibState()
+    }
 
     await pyodide.runPythonAsync(`
 import os
@@ -335,6 +442,19 @@ runpy.run_path(${JSON.stringify(workspacePath)}, run_name="__main__")
     }
     error = errorMsg || 'Python execution failed'
   } finally {
+    if (usesMatplotlib) {
+      try {
+        const figures = await collectMatplotlibFigures()
+        if (figures.length > 0) {
+          self.postMessage({ type: 'figures', figures })
+        }
+      } catch (figureErr) {
+        const figureMessage = `[WasmForge] Failed to render Matplotlib output: ${figureErr.message || figureErr}\n`
+        self.postMessage({ type: 'stderr', data: `\n${figureMessage}` })
+        error ||= figureMessage.trim()
+      }
+    }
+
     try {
       await persistWorkspaceToOpfs()
     } catch (syncErr) {
@@ -345,7 +465,11 @@ runpy.run_path(${JSON.stringify(workspacePath)}, run_name="__main__")
 
     stopHeartbeat()
     stopFlushInterval()
-    self.postMessage({ type: 'done', error })
+    self.postMessage({
+      type: 'done',
+      error,
+      durationMs: performance.now() - startedAt,
+    })
   }
 }
 

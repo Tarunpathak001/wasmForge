@@ -87,6 +87,11 @@ async function waitForTerminalText(page, text, timeout = 20000) {
   );
 }
 
+async function waitForFigure(page, timeout = 60000) {
+  await page.getByText("Python Output", { exact: true }).waitFor({ timeout });
+  await page.locator('img[alt*="Figure"]').first().waitFor({ timeout });
+}
+
 async function ensureIdeLoaded(page) {
   await page.goto(ideUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
@@ -131,7 +136,7 @@ async function readServiceWorkerState(page) {
       const cache = await caches.open(cacheKey);
       const requests = await cache.keys();
       for (const request of requests) {
-        if (/pyodide|pglite|sql-wasm|workbox|manifest|index/i.test(request.url)) {
+        if (/pyodide|pglite|sql-wasm|workbox|manifest|index|matplotlib|contourpy|kiwisolver|pillow|fonttools|packaging|pyparsing|cycler/i.test(request.url)) {
           interestingUrls.add(request.url);
         }
       }
@@ -141,9 +146,12 @@ async function readServiceWorkerState(page) {
       controlled: Boolean(navigator.serviceWorker.controller),
       ready: "serviceWorker" in navigator,
       cacheKeys,
-      interestingUrls: Array.from(interestingUrls).slice(0, 30),
+      interestingUrls: Array.from(interestingUrls).slice(0, 60),
       hasRuntimeAssets: Array.from(interestingUrls).some((url) =>
         /pyodide|pglite|sql-wasm/i.test(url),
+      ),
+      hasMatplotlibAssets: Array.from(interestingUrls).some((url) =>
+        /matplotlib|contourpy|kiwisolver|pillow|fonttools|packaging|pyparsing|cycler/i.test(url),
       ),
     };
   });
@@ -183,6 +191,26 @@ async function verifyOfflinePythonFlow(page) {
   await page.keyboard.press("Enter");
   await waitForTerminalText(page, "offline-ok 3 reload");
 
+  await page.context().setOffline(false);
+}
+
+async function verifyMatplotlibOfflineFlow(page) {
+  await createFile(page, "plot.py");
+  await setEditorValue(
+    page,
+    'import matplotlib.pyplot as plt\nplt.plot([1, 2, 3], [1, 4, 9])\nplt.title("Offline Plot")\nplt.xlabel("x")\nplt.ylabel("y")\nplt.show()\n',
+  );
+
+  await clickRun(page);
+  await waitForFigure(page);
+
+  await page.context().setOffline(true);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await page.waitForTimeout(1200);
+  await page.getByText("plot.py", { exact: true }).first().click();
+  await clickRun(page);
+  await waitForFigure(page);
   await page.context().setOffline(false);
 }
 
@@ -336,12 +364,19 @@ async function main() {
     }
 
     report.serviceWorker = await readServiceWorkerState(page);
-    if (!report.serviceWorker.controlled || !report.serviceWorker.hasRuntimeAssets) {
-      throw new Error("Service worker cache/runtime assets were not detected");
+    if (
+      !report.serviceWorker.controlled ||
+      !report.serviceWorker.hasRuntimeAssets ||
+      !report.serviceWorker.hasMatplotlibAssets
+    ) {
+      throw new Error("Service worker cache/runtime assets were not fully detected");
     }
 
     await verifyOfflinePythonFlow(page);
     report.offlinePython = "ok";
+
+    await verifyMatplotlibOfflineFlow(page);
+    report.offlineMatplotlib = "ok";
 
     await verifyJavaScriptKillRecovery(page);
     report.javascriptKillRecovery = "ok";

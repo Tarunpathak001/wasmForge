@@ -3,6 +3,7 @@ import Terminal from "./components/Terminal.jsx";
 import FileTree from "./components/FileTree.jsx";
 import SqlResultsPanel from "./components/SqlResultsPanel.jsx";
 import PythonOutputPanel from "./components/PythonOutputPanel.jsx";
+import OfflineProofPanel from "./components/OfflineProofPanel.jsx";
 import { usePyodideWorker } from "./hooks/usePyodideWorker.js";
 import { useIOWorker } from "./hooks/useIOWorker.js";
 import { useJsWorker } from "./hooks/useJsWorker.js";
@@ -44,6 +45,42 @@ const SHARE_HASH_PREFIX = "#share=";
 const SHARE_PAYLOAD_VERSION = 1;
 const MAX_SHARE_URL_LENGTH = 12000;
 const SHARE_STATUS_RESET_MS = 2600;
+const OFFLINE_PROOF_WORKSPACE_NAME = "offline-proof-demo";
+const OFFLINE_PROOF_HELPER_FILENAME = "offline_helper.py";
+const OFFLINE_PROOF_REQUIRED_CACHE_PATTERNS = [
+  /\/pyodide\/pyodide\.js/i,
+  /\/pyodide\/pyodide\.asm\.wasm/i,
+  /\/pyodide\/python_stdlib\.zip/i,
+  /\/numpy-[^/]+\.whl/i,
+];
+const OFFLINE_PROOF_STEPS = [
+  "Open the proof workspace once while online.",
+  "Wait until every check says ready for Airplane Mode.",
+  "Turn on Airplane Mode or disable Wi-Fi.",
+  "Hard refresh the /ide page.",
+  "Run main.py and answer the input() prompt.",
+  "Watch the helper import, local runtime proof, and persisted workspace all survive.",
+];
+const OFFLINE_PROOF_MAIN_SOURCE = `from offline_helper import build_report
+
+name = input("Offline proof > type any name: ")
+
+for line in build_report(name):
+    print(line)
+`;
+const OFFLINE_PROOF_HELPER_SOURCE = `import numpy as np
+
+
+def build_report(name):
+    sample = np.array([2, 4, 6, 8], dtype=int)
+    return [
+        f"offline-proof ok for {name}",
+        f"helper-import ok {int(sample.sum())}",
+        "browser worker ok",
+        "workspace persistence ok",
+        "airplane-mode demo ready",
+    ]
+`;
 const Editor = lazy(() => import("./components/Editor.jsx"));
 
 const IDE_THEME_PALETTES = {
@@ -327,6 +364,69 @@ function createSharedWorkspaceName(filename, code) {
   return normalizeWorkspaceName(`shared-${slug}-${suffix}`);
 }
 
+function buildOfflineProofStepText() {
+  return [
+    "WasmForge offline proof",
+    "",
+    ...OFFLINE_PROOF_STEPS.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    `Workspace: ${OFFLINE_PROOF_WORKSPACE_NAME}`,
+    `Files: ${DEFAULT_FILENAME}, ${OFFLINE_PROOF_HELPER_FILENAME}`,
+  ].join("\n");
+}
+
+function getOfflineProofGuidance(checks) {
+  if (!checks.serviceWorkerControlled) {
+    return "Stay online and refresh once so the service worker can take control of /ide.";
+  }
+
+  if (!checks.runtimeCacheReady) {
+    return "Wait for Python to finish loading online so Pyodide, the stdlib, and NumPy are fully cached.";
+  }
+
+  if (!checks.inputReady) {
+    return "Use the deployed or preview origin so SharedArrayBuffer-backed input() stays available.";
+  }
+
+  if (!checks.workspacePrepared) {
+    return "Prepare the proof workspace to stage the offline demo files.";
+  }
+
+  return "Ready for Airplane Mode. Turn the network off, hard refresh, then run the prepared file.";
+}
+
+async function hasOfflineProofRuntimeAssetsCached() {
+  if (typeof caches === "undefined") {
+    return false;
+  }
+
+  try {
+    const cacheKeys = await caches.keys();
+    const satisfiedPatterns = OFFLINE_PROOF_REQUIRED_CACHE_PATTERNS.map(() => false);
+
+    for (const cacheKey of cacheKeys) {
+      const cache = await caches.open(cacheKey);
+      const requests = await cache.keys();
+
+      for (const request of requests) {
+        OFFLINE_PROOF_REQUIRED_CACHE_PATTERNS.forEach((pattern, index) => {
+          if (!satisfiedPatterns[index] && pattern.test(request.url)) {
+            satisfiedPatterns[index] = true;
+          }
+        });
+      }
+
+      if (satisfiedPatterns.every(Boolean)) {
+        return true;
+      }
+    }
+
+    return satisfiedPatterns.every(Boolean);
+  } catch {
+    return false;
+  }
+}
+
 async function copyTextToClipboard(text) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -387,9 +487,26 @@ function createEmptyPythonExecution() {
   return {
     filename: "",
     figures: [],
+    tables: [],
     error: "",
     durationMs: null,
     executedAt: null,
+  };
+}
+
+function createInitialOfflineProofState() {
+  return {
+    checking: false,
+    ready: false,
+    error: "",
+    guidance: "Open the proof flow to see whether this origin is ready for the Airplane Mode demo.",
+    lastCheckedAt: null,
+    checks: {
+      serviceWorkerControlled: false,
+      runtimeCacheReady: false,
+      inputReady: false,
+      workspacePrepared: false,
+    },
   };
 }
 
@@ -411,6 +528,64 @@ function normalizePythonFigures(figures = []) {
       id,
       format,
       dataUrl: `data:image/${format};base64,${data}`,
+    }];
+  });
+}
+
+function normalizePythonTables(tables = []) {
+  if (!Array.isArray(tables)) {
+    return [];
+  }
+
+  return tables.flatMap((table, index) => {
+    const columns = Array.isArray(table?.columns)
+      ? table.columns.map((column) => String(column ?? ""))
+      : [];
+    const rows = Array.isArray(table?.rows)
+      ? table.rows.map((row) => (
+        Array.isArray(row)
+          ? row.map((cell) => (
+            cell === null ||
+            typeof cell === "string" ||
+            typeof cell === "number" ||
+            typeof cell === "boolean"
+              ? cell
+              : String(cell ?? "")
+          ))
+          : []
+      ))
+      : [];
+    const rowCount = Number.isFinite(table?.rowCount)
+      ? Math.max(0, Number(table.rowCount))
+      : rows.length;
+    const columnCount = Number.isFinite(table?.columnCount)
+      ? Math.max(0, Number(table.columnCount))
+      : columns.length;
+
+    if (columns.length === 0 && rows.length === 0) {
+      return [];
+    }
+
+    return [{
+      id: String(table?.id || `Display ${index + 1}`).trim() || `Display ${index + 1}`,
+      kind: String(table?.kind || "dataframe").trim().toLowerCase() || "dataframe",
+      title: String(table?.title || `Display ${index + 1}`).trim() || `Display ${index + 1}`,
+      columns,
+      rows,
+      index: Array.isArray(table?.index)
+        ? table.index.map((value) => (
+          value === null ||
+          typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "boolean"
+            ? value
+            : String(value ?? "")
+        ))
+        : [],
+      rowCount,
+      columnCount,
+      truncatedRows: Number.isFinite(table?.truncatedRows) ? Math.max(0, Number(table.truncatedRows)) : 0,
+      truncatedColumns: Number.isFinite(table?.truncatedColumns) ? Math.max(0, Number(table.truncatedColumns)) : 0,
     }];
   });
 }
@@ -538,6 +713,7 @@ export default function App({ onNavigateHome }) {
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(DEFAULT_FILENAME);
   const [openFiles, setOpenFiles] = useState([]);
+  const [isActiveFileLoading, setIsActiveFileLoading] = useState(true);
   const [status, setStatus] = useState("Loading workspace...");
   const [sqlExecution, setSqlExecution] = useState(createEmptySqlExecution);
   const [pythonExecution, setPythonExecution] = useState(createEmptyPythonExecution);
@@ -550,6 +726,9 @@ export default function App({ onNavigateHome }) {
   const [fileSearchQuery, setFileSearchQuery] = useState("");
   const [bottomPanelMode, setBottomPanelMode] = useState("terminal");
   const [shareStatus, setShareStatus] = useState({ tone: "idle", label: "Share" });
+  const [offlineProofVisible, setOfflineProofVisible] = useState(false);
+  const [offlineProofState, setOfflineProofState] = useState(createInitialOfflineProofState);
+  const [isPreparingOfflineProof, setIsPreparingOfflineProof] = useState(false);
   const [shareHashSignal, setShareHashSignal] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === "undefined" ? 1280 : window.innerWidth,
@@ -976,55 +1155,66 @@ export default function App({ onNavigateHome }) {
         createDefaultIfEmpty = false,
         workspaceName = activeWorkspaceRef.current,
       } = options;
-      const filenames = await listFiles(workspaceName);
-
-      if (workspaceName !== activeWorkspaceRef.current) {
-        return;
+      const shouldTrackLoading = workspaceName === activeWorkspaceRef.current;
+      if (shouldTrackLoading) {
+        setIsActiveFileLoading(true);
       }
-
-      if (filenames.length === 0) {
-        if (createDefaultIfEmpty) {
-          await writeFile(DEFAULT_FILENAME, DEFAULT_PYTHON, "workspace", workspaceName);
-          if (workspaceName !== activeWorkspaceRef.current) {
-            return;
-          }
-
-          setFiles([createFileRecord(DEFAULT_FILENAME, DEFAULT_PYTHON)]);
-          setActiveFile(DEFAULT_FILENAME);
-        } else {
-          setFiles([]);
-          setActiveFile("");
-        }
-        return;
-      }
-
-      replaceFileList(filenames);
-      const nextActiveFile = chooseActiveFile(filenames, preferredFile);
-      setActiveFile(nextActiveFile);
-      let content = "";
 
       try {
-        content = await readFile(nextActiveFile, "workspace", workspaceName);
-      } catch (error) {
-        if (workspaceName !== activeWorkspaceRef.current || isMissingWorkspaceFileError(error)) {
+        const filenames = await listFiles(workspaceName);
+
+        if (workspaceName !== activeWorkspaceRef.current) {
           return;
         }
-        throw error;
-      }
 
-      if (nextActiveFile === DEFAULT_FILENAME) {
-        const migratedDefaultPython = migrateLegacyDefaultPython(content);
-        if (migratedDefaultPython) {
-          await writeFile(DEFAULT_FILENAME, migratedDefaultPython, "workspace", workspaceName);
-          content = migratedDefaultPython;
+        if (filenames.length === 0) {
+          if (createDefaultIfEmpty) {
+            await writeFile(DEFAULT_FILENAME, DEFAULT_PYTHON, "workspace", workspaceName);
+            if (workspaceName !== activeWorkspaceRef.current) {
+              return;
+            }
+
+            setFiles([createFileRecord(DEFAULT_FILENAME, DEFAULT_PYTHON)]);
+            setActiveFile(DEFAULT_FILENAME);
+          } else {
+            setFiles([]);
+            setActiveFile("");
+          }
+          return;
+        }
+
+        replaceFileList(filenames);
+        const nextActiveFile = chooseActiveFile(filenames, preferredFile);
+        setActiveFile(nextActiveFile);
+        let content = "";
+
+        try {
+          content = await readFile(nextActiveFile, "workspace", workspaceName);
+        } catch (error) {
+          if (workspaceName !== activeWorkspaceRef.current || isMissingWorkspaceFileError(error)) {
+            return;
+          }
+          throw error;
+        }
+
+        if (nextActiveFile === DEFAULT_FILENAME) {
+          const migratedDefaultPython = migrateLegacyDefaultPython(content);
+          if (migratedDefaultPython) {
+            await writeFile(DEFAULT_FILENAME, migratedDefaultPython, "workspace", workspaceName);
+            content = migratedDefaultPython;
+          }
+        }
+
+        if (workspaceName !== activeWorkspaceRef.current) {
+          return;
+        }
+
+        upsertFileContent(nextActiveFile, content);
+      } finally {
+        if (workspaceName === activeWorkspaceRef.current) {
+          setIsActiveFileLoading(false);
         }
       }
-
-      if (workspaceName !== activeWorkspaceRef.current) {
-        return;
-      }
-
-      upsertFileContent(nextActiveFile, content);
     },
     [listFiles, readFile, replaceFileList, upsertFileContent, writeFile],
   );
@@ -1150,9 +1340,30 @@ export default function App({ onNavigateHome }) {
           ? previous.executedAt
           : Date.now(),
         figures: normalizedFigures,
+        tables: previous.filename === filename ? previous.tables : [],
       }));
       setBottomPanelMode("output");
     },
+    onTables: (tables) => {
+      const normalizedTables = normalizePythonTables(tables);
+      if (normalizedTables.length === 0) {
+        return;
+      }
+
+      const filename = activeFileRef.current;
+      setPythonExecution((previous) => ({
+        ...createEmptyPythonExecution(),
+        filename,
+        error: previous.filename === filename ? previous.error : "",
+        durationMs: previous.filename === filename ? previous.durationMs : null,
+        executedAt: previous.filename === filename && previous.executedAt
+          ? previous.executedAt
+          : Date.now(),
+        figures: previous.filename === filename ? previous.figures : [],
+        tables: normalizedTables,
+      }));
+        setBottomPanelMode("output");
+      },
     onReady: ({ stdinSupported, workspaceName } = {}) => {
       setStatus("Python ready");
       terminalRef.current?.writeln(
@@ -1318,6 +1529,102 @@ export default function App({ onNavigateHome }) {
     [runPgliteQuery],
   );
 
+  const refreshOfflineProofState = useCallback(
+    async (knownWorkspaces = workspaces) => {
+      setOfflineProofState((previous) => ({
+        ...previous,
+        checking: true,
+        error: "",
+      }));
+
+      try {
+        let serviceWorkerControlled = false;
+        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+          try {
+            await navigator.serviceWorker.ready;
+          } catch {
+            // Fall back to the current controller state below.
+          }
+          serviceWorkerControlled = Boolean(navigator.serviceWorker.controller);
+        }
+
+        const runtimeCacheReady = await hasOfflineProofRuntimeAssetsCached();
+        const inputReady =
+          typeof window !== "undefined" &&
+          window.crossOriginIsolated === true &&
+          typeof SharedArrayBuffer === "function";
+
+        let workspacePrepared = false;
+        if (isIOWorkerReady && knownWorkspaces.includes(OFFLINE_PROOF_WORKSPACE_NAME)) {
+          const proofFiles = await listFiles(OFFLINE_PROOF_WORKSPACE_NAME);
+          workspacePrepared = [DEFAULT_FILENAME, OFFLINE_PROOF_HELPER_FILENAME].every((filename) =>
+            proofFiles.includes(filename),
+          );
+        }
+
+        const checks = {
+          serviceWorkerControlled,
+          runtimeCacheReady,
+          inputReady,
+          workspacePrepared,
+        };
+
+        setOfflineProofState({
+          checking: false,
+          ready: Object.values(checks).every(Boolean),
+          error: "",
+          guidance: getOfflineProofGuidance(checks),
+          lastCheckedAt: Date.now(),
+          checks,
+        });
+      } catch (error) {
+        setOfflineProofState((previous) => ({
+          ...previous,
+          checking: false,
+          error: error?.message || String(error),
+          guidance: "Finish loading the IDE online, then refresh the proof checks.",
+          lastCheckedAt: Date.now(),
+        }));
+      }
+    },
+    [isIOWorkerReady, listFiles, workspaces],
+  );
+
+  const openOfflineProofFlow = useCallback(() => {
+    if (isRunning || isJsRunning || isSqlRunning) {
+      terminalRef.current?.writeln(
+        "\x1b[33m[Offline proof] Finish or stop the active session before opening the proof flow.\x1b[0m",
+      );
+      return;
+    }
+
+    setOfflineProofVisible(true);
+    setBottomPanelMode("output");
+    setMobilePane("output");
+    void refreshOfflineProofState();
+  }, [isJsRunning, isRunning, isSqlRunning, refreshOfflineProofState]);
+
+  const closeOfflineProofFlow = useCallback(() => {
+    setOfflineProofVisible(false);
+  }, []);
+
+  const handleRefreshOfflineProof = useCallback(() => {
+    void refreshOfflineProofState();
+  }, [refreshOfflineProofState]);
+
+  const handleCopyOfflineProofSteps = useCallback(async () => {
+    try {
+      await copyTextToClipboard(buildOfflineProofStepText());
+      terminalRef.current?.writeln(
+        "\x1b[36m[Offline proof] Demo steps copied to the clipboard.\x1b[0m",
+      );
+    } catch (error) {
+      terminalRef.current?.writeln(
+        `\x1b[31m[Offline proof] ${error?.message || error}\x1b[0m`,
+      );
+    }
+  }, []);
+
   useEffect(() => {
     if (!isIOWorkerReady) {
       return;
@@ -1440,6 +1747,20 @@ export default function App({ onNavigateHome }) {
   ]);
 
   useEffect(() => {
+    if (!offlineProofVisible) {
+      return;
+    }
+
+    void refreshOfflineProofState();
+  }, [
+    activeWorkspace,
+    offlineProofVisible,
+    refreshOfflineProofState,
+    workspaces,
+    workspaceBootstrapped,
+  ]);
+
+  useEffect(() => {
     const flushPendingWorkspaceWrites = () => {
       syncActiveEditorDraft({ scheduleWorkerWrite: false, updateState: false });
       void flushAllWrites().catch(() => {});
@@ -1483,6 +1804,80 @@ export default function App({ onNavigateHome }) {
     [flushAllWrites, isJsRunning, isRunning, isSqlRunning, syncActiveEditorDraft],
   );
 
+  const handlePrepareOfflineProof = useCallback(async () => {
+    setIsPreparingOfflineProof(true);
+
+    try {
+      await prepareWorkspaceMutation("preparing the offline proof demo");
+
+      const existingWorkspaces = await listWorkspaces();
+      if (!existingWorkspaces.includes(OFFLINE_PROOF_WORKSPACE_NAME)) {
+        await createWorkspace(OFFLINE_PROOF_WORKSPACE_NAME);
+      }
+
+      await writeFile(DEFAULT_FILENAME, OFFLINE_PROOF_MAIN_SOURCE, "workspace", OFFLINE_PROOF_WORKSPACE_NAME);
+      clearRecoveryWrite(DEFAULT_FILENAME, OFFLINE_PROOF_WORKSPACE_NAME);
+      await writeFile(
+        OFFLINE_PROOF_HELPER_FILENAME,
+        OFFLINE_PROOF_HELPER_SOURCE,
+        "workspace",
+        OFFLINE_PROOF_WORKSPACE_NAME,
+      );
+      clearRecoveryWrite(OFFLINE_PROOF_HELPER_FILENAME, OFFLINE_PROOF_WORKSPACE_NAME);
+
+      const nextWorkspaces = Array.from(
+        new Set([...existingWorkspaces, OFFLINE_PROOF_WORKSPACE_NAME]),
+      ).sort((left, right) => left.localeCompare(right));
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setWorkspaces(nextWorkspaces);
+      setIsActiveFileLoading(true);
+      setSqlExecution(createEmptySqlExecution());
+      setPythonExecution(createEmptyPythonExecution());
+      setSidebarMode("explorer");
+      setFileSearchQuery("");
+      setOpenFiles([]);
+      setFiles([]);
+      setActiveFile("");
+      setActiveWorkspace(OFFLINE_PROOF_WORKSPACE_NAME);
+      setBottomPanelMode("output");
+      setMobilePane("output");
+      setOfflineProofVisible(true);
+
+      terminalRef.current?.writeln(
+        `\x1b[36m[Offline proof] Prepared ${OFFLINE_PROOF_WORKSPACE_NAME} with ${DEFAULT_FILENAME} and ${OFFLINE_PROOF_HELPER_FILENAME}.\x1b[0m`,
+      );
+      terminalRef.current?.writeln(
+        "\x1b[90m[Offline proof] Stay online until every check is ready, then switch to Airplane Mode and run main.py.\x1b[0m",
+      );
+      await refreshOfflineProofState(nextWorkspaces);
+    } catch (error) {
+      const message = error?.message || String(error);
+      terminalRef.current?.writeln(`\x1b[31m[Offline proof] ${message}\x1b[0m`);
+      setOfflineProofState((previous) => ({
+        ...previous,
+        checking: false,
+        error: message,
+        guidance: "Finish loading the IDE online, then refresh the proof checks.",
+        lastCheckedAt: Date.now(),
+      }));
+    } finally {
+      if (isMountedRef.current) {
+        setIsPreparingOfflineProof(false);
+      }
+    }
+  }, [
+    clearRecoveryWrite,
+    createWorkspace,
+    listWorkspaces,
+    prepareWorkspaceMutation,
+    refreshOfflineProofState,
+    writeFile,
+  ]);
+
   const handleKill = useCallback(() => {
     terminalRef.current?.cancelInput({ reason: "^C" });
     if (getRuntimeKind(activeFileRef.current) === "javascript") {
@@ -1502,6 +1897,11 @@ export default function App({ onNavigateHome }) {
 
   const handleRun = useCallback(async () => {
     terminalRef.current?.cancelInput({ newline: false });
+    if (isActiveFileLoading) {
+      terminalRef.current?.writeln("\x1b[33m[WasmForge] Wait for the active file to finish loading before running it.\x1b[0m");
+      return;
+    }
+    setOfflineProofVisible(false);
     const syncedSnapshot = syncActiveEditorDraft();
     const file = files.find((entry) => entry.name === activeFile);
     if (!file) {
@@ -1607,6 +2007,7 @@ export default function App({ onNavigateHome }) {
     executeSqliteFile,
     files,
     flushAllWrites,
+    isActiveFileLoading,
     isJsReady,
     isReady,
     pgliteReady,
@@ -1690,24 +2091,26 @@ export default function App({ onNavigateHome }) {
         return;
       }
 
-      setWorkspaces((prev) => {
-        const next = prev.includes(sharedWorkspaceName)
-          ? prev
-          : [...prev, sharedWorkspaceName];
-        return next.slice().sort((left, right) => left.localeCompare(right));
-      });
-      setSqlExecution(createEmptySqlExecution());
-      setPythonExecution(createEmptyPythonExecution());
-      setBottomPanelMode("terminal");
-      setMobilePane("editor");
-      setSidebarMode("explorer");
-      setFileSearchQuery("");
-      setOpenFiles([filename]);
-      setFiles([createFileRecord(filename, code)]);
-      setActiveFile(filename);
-      setActiveWorkspace(sharedWorkspaceName);
-      terminalRef.current?.writeln(
-        `\x1b[36m[Share] Loaded ${filename} into ${sharedWorkspaceName}\x1b[0m`,
+        setWorkspaces((prev) => {
+          const next = prev.includes(sharedWorkspaceName)
+            ? prev
+            : [...prev, sharedWorkspaceName];
+          return next.slice().sort((left, right) => left.localeCompare(right));
+        });
+        setIsActiveFileLoading(true);
+        setSqlExecution(createEmptySqlExecution());
+        setPythonExecution(createEmptyPythonExecution());
+        setOfflineProofVisible(false);
+        setBottomPanelMode("terminal");
+        setMobilePane("editor");
+        setSidebarMode("explorer");
+        setFileSearchQuery("");
+        setOpenFiles([]);
+        setFiles([]);
+        setActiveFile("");
+        setActiveWorkspace(sharedWorkspaceName);
+        terminalRef.current?.writeln(
+          `\x1b[36m[Share] Loaded ${filename} into ${sharedWorkspaceName}\x1b[0m`,
       );
       publishShareStatus("Loaded", "success");
       clearSharedPayloadHash();
@@ -1746,8 +2149,10 @@ export default function App({ onNavigateHome }) {
     }
 
     await prepareWorkspaceMutation("switching workspaces");
+    setIsActiveFileLoading(true);
     setSqlExecution(createEmptySqlExecution());
     setPythonExecution(createEmptyPythonExecution());
+    setOfflineProofVisible(false);
     setOpenFiles([]);
     setFiles([]);
     setActiveFile("");
@@ -1765,11 +2170,13 @@ export default function App({ onNavigateHome }) {
 
     await prepareWorkspaceMutation("creating a new workspace");
     const created = await createWorkspace(normalizedName);
-    const nextWorkspaces = await listWorkspaces();
-    nextWorkspaces.sort((left, right) => left.localeCompare(right));
-    setWorkspaces(nextWorkspaces);
-    setSqlExecution(createEmptySqlExecution());
-    setPythonExecution(createEmptyPythonExecution());
+      const nextWorkspaces = await listWorkspaces();
+      nextWorkspaces.sort((left, right) => left.localeCompare(right));
+      setWorkspaces(nextWorkspaces);
+      setIsActiveFileLoading(true);
+      setSqlExecution(createEmptySqlExecution());
+      setPythonExecution(createEmptyPythonExecution());
+    setOfflineProofVisible(false);
     setOpenFiles([]);
     setFiles([]);
     setActiveFile("");
@@ -1781,28 +2188,35 @@ export default function App({ onNavigateHome }) {
 
   const handleFileSelect = useCallback(async (name) => {
     if ((isRunning || isJsRunning || isSqlRunning) && name !== activeFileRef.current) {
-      terminalRef.current?.writeln("\x1b[33m[WasmForge] Finish or stop the active session before switching files.\x1b[0m");
+        terminalRef.current?.writeln("\x1b[33m[WasmForge] Finish or stop the active session before switching files.\x1b[0m");
       return;
     }
 
     const workspaceName = activeWorkspaceRef.current;
     syncActiveEditorDraft();
     await flushAllWrites();
+    setIsActiveFileLoading(true);
     let content = "";
 
     try {
-      content = await readFile(name, "workspace", workspaceName);
-    } catch (error) {
-      if (workspaceName !== activeWorkspaceRef.current || isMissingWorkspaceFileError(error)) {
-        return;
+      try {
+        content = await readFile(name, "workspace", workspaceName);
+      } catch (error) {
+        if (workspaceName !== activeWorkspaceRef.current || isMissingWorkspaceFileError(error)) {
+          return;
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    if (workspaceName === activeWorkspaceRef.current) {
-      setActiveFile(name);
-      upsertFileContent(name, content);
-      setMobilePane("editor");
+      if (workspaceName === activeWorkspaceRef.current) {
+        setActiveFile(name);
+        upsertFileContent(name, content);
+        setMobilePane("editor");
+      }
+    } finally {
+      if (workspaceName === activeWorkspaceRef.current) {
+        setIsActiveFileLoading(false);
+      }
     }
   }, [flushAllWrites, isJsRunning, isRunning, isSqlRunning, readFile, syncActiveEditorDraft, upsertFileContent]);
 
@@ -1959,10 +2373,41 @@ export default function App({ onNavigateHome }) {
     ? `${activeStatusMessage} • ${activePythonLocalProofLabel}`
     : activeStatusMessage;
   const shareButtonDisabled = !activeFile;
+  const offlineProofChecks = useMemo(() => ([
+    {
+      id: "service-worker",
+      label: "Offline reload shell",
+      description: "Service worker control is active, so /ide can hard-refresh from cache instead of a server.",
+      ok: offlineProofState.checks.serviceWorkerControlled,
+    },
+    {
+      id: "runtime-cache",
+      label: "Runtime cache warm",
+      description: "Pyodide, the Python stdlib, and NumPy are already cached on this device for the demo.",
+      ok: offlineProofState.checks.runtimeCacheReady,
+    },
+    {
+      id: "interactive-input",
+      label: "Interactive input ready",
+      description: "SharedArrayBuffer-backed input() is available on this origin, so prompts still work offline.",
+      ok: offlineProofState.checks.inputReady,
+    },
+    {
+      id: "proof-workspace",
+      label: "Proof workspace staged",
+      description: `The ${OFFLINE_PROOF_WORKSPACE_NAME} workspace already has ${DEFAULT_FILENAME} and ${OFFLINE_PROOF_HELPER_FILENAME}.`,
+      ok: offlineProofState.checks.workspacePrepared,
+    },
+  ]), [offlineProofState.checks]);
+  const bottomPanelRuntimeLabel =
+    bottomPanelMode === "output" && offlineProofVisible ? "Offline Proof" : currentLanguageLabel;
 
   useEffect(() => {
+    if (offlineProofVisible) {
+      return;
+    }
     setBottomPanelMode(showSqlResultsPanel ? "output" : "terminal");
-  }, [activeFile, showSqlResultsPanel]);
+  }, [activeFile, offlineProofVisible, showSqlResultsPanel]);
 
   useEffect(() => {
     if (!isMobileLayout) {
@@ -2027,7 +2472,11 @@ export default function App({ onNavigateHome }) {
     isMobileLayout || editorPaneHeight === null
       ? { flex: `${DEFAULT_EDITOR_RATIO} 1 0%` }
       : { flex: `0 0 ${editorPaneHeight}px` };
-  const runButtonDisabled = isAnyRuntimeBusy || activeRuntime === "unknown" || !activeRuntimeReady;
+  const runButtonDisabled =
+    isAnyRuntimeBusy ||
+    isActiveFileLoading ||
+    activeRuntime === "unknown" ||
+    !activeRuntimeReady;
   const desktopNavWidth = ACTIVITY_BAR_WIDTH + sidebarWidth;
   const sidebarModeLabel = sidebarMode === "search" ? "Search" : "Explorer";
   const mobileNavMode =
@@ -2160,43 +2609,66 @@ export default function App({ onNavigateHome }) {
                 textOverflow: "ellipsis",
               }}
             >
-              {currentLanguageLabel}
+              {bottomPanelRuntimeLabel}
             </span>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "0 12px" }}>
-          <button
-            type="button"
-            onClick={() => {
-              if (bottomPanelMode === "output" && showSqlResultsPanel) {
-                setSqlExecution(createEmptySqlExecution());
-                return;
-              }
-              if (bottomPanelMode === "output" && showPythonOutputPanel) {
-                setPythonExecution(createEmptyPythonExecution());
-                return;
-              }
-              terminalRef.current?.clear?.();
-            }}
-            style={terminalActionButtonStyle()}
-            className="wf-terminal-action"
-          >
-            Clear
-          </button>
-          {canKillActiveRuntime && activeRuntimeRunning ? (
-            <button
-              type="button"
-              onClick={handleKill}
-              style={terminalActionButtonStyle({
-                color: "var(--ide-shell-danger)",
-                border: "color-mix(in srgb, var(--ide-shell-danger) 28%, transparent)",
-              })}
-              className="wf-terminal-action"
-            >
-              Kill
-            </button>
-          ) : null}
+          {bottomPanelMode === "output" && offlineProofVisible ? (
+            <>
+              <button
+                type="button"
+                onClick={handleRefreshOfflineProof}
+                style={terminalActionButtonStyle()}
+                className="wf-terminal-action"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={closeOfflineProofFlow}
+                style={terminalActionButtonStyle()}
+                className="wf-terminal-action"
+              >
+                Close
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (bottomPanelMode === "output" && showSqlResultsPanel) {
+                    setSqlExecution(createEmptySqlExecution());
+                    return;
+                  }
+                  if (bottomPanelMode === "output" && showPythonOutputPanel) {
+                    setPythonExecution(createEmptyPythonExecution());
+                    return;
+                  }
+                  terminalRef.current?.clear?.();
+                }}
+                style={terminalActionButtonStyle()}
+                className="wf-terminal-action"
+              >
+                Clear
+              </button>
+              {canKillActiveRuntime && activeRuntimeRunning ? (
+                <button
+                  type="button"
+                  onClick={handleKill}
+                  style={terminalActionButtonStyle({
+                    color: "var(--ide-shell-danger)",
+                    border: "color-mix(in srgb, var(--ide-shell-danger) 28%, transparent)",
+                  })}
+                  className="wf-terminal-action"
+                >
+                  Kill
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
 
@@ -2205,7 +2677,24 @@ export default function App({ onNavigateHome }) {
           <Terminal ref={terminalRef} isVisible={terminalVisible} themeMode={ideTheme === "inverted" ? "day" : "night"} />
         </div>
         <div style={{ display: outputVisible ? "block" : "none", height: "100%" }}>
-          {showSqlResultsPanel ? (
+          {offlineProofVisible ? (
+            <OfflineProofPanel
+              ready={offlineProofState.ready}
+              checking={offlineProofState.checking}
+              preparing={isPreparingOfflineProof}
+              error={offlineProofState.error}
+              guidance={offlineProofState.guidance}
+              lastCheckedAt={offlineProofState.lastCheckedAt}
+              checks={offlineProofChecks}
+              steps={OFFLINE_PROOF_STEPS}
+              workspaceName={OFFLINE_PROOF_WORKSPACE_NAME}
+              activeWorkspace={activeWorkspace}
+              onPrepare={handlePrepareOfflineProof}
+              onRefresh={handleRefreshOfflineProof}
+              onCopySteps={handleCopyOfflineProofSteps}
+              onClose={closeOfflineProofFlow}
+            />
+          ) : showSqlResultsPanel ? (
             <SqlResultsPanel
               activeFile={activeFile}
               engine={activeRuntime}
@@ -2608,7 +3097,18 @@ export default function App({ onNavigateHome }) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
               <span>{currentLanguageLabel}</span>
-              <span>⚡ Offline-ready</span>
+              <button
+                type="button"
+                aria-label="Open offline proof flow"
+                onClick={openOfflineProofFlow}
+                disabled={isAnyRuntimeBusy}
+                style={statusBarActionButtonStyle({
+                  active: offlineProofVisible,
+                  disabled: isAnyRuntimeBusy,
+                })}
+              >
+                ⚡ Offline-ready
+              </button>
             </div>
           </div>
 
@@ -2810,7 +3310,18 @@ export default function App({ onNavigateHome }) {
             ) : null}
             <span style={statusBarTokenStyle()}>{currentLanguageLabel}</span>
             <span style={statusBarDividerStyle()} />
-            <span style={statusBarTokenStyle()}>⚡ Offline-ready</span>
+            <button
+              type="button"
+              aria-label="Open offline proof flow"
+              onClick={openOfflineProofFlow}
+              disabled={isAnyRuntimeBusy}
+              style={statusBarActionButtonStyle({
+                active: offlineProofVisible,
+                disabled: isAnyRuntimeBusy,
+              })}
+            >
+              ⚡ Offline-ready
+            </button>
           </div>
         </div>
       ) : null}
@@ -3488,6 +3999,17 @@ function statusBarTokenStyle() {
     position: "relative",
     whiteSpace: "nowrap",
     fontWeight: 500,
+  };
+}
+
+function statusBarActionButtonStyle({ active = false, disabled = false } = {}) {
+  return {
+    ...statusBarTokenStyle(),
+    border: "none",
+    background: "transparent",
+    color: active ? "var(--ide-shell-accent)" : "var(--ide-shell-text)",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.56 : 1,
   };
 }
 

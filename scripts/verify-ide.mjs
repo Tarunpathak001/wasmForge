@@ -10,6 +10,7 @@ const artifactsDir = path.join(workspaceRoot, "artifacts");
 const baseUrl = process.env.WASMFORGE_VERIFY_URL || "http://localhost:5173";
 const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = "playwright-verify";
+const offlineProofWorkspace = "offline-proof-demo";
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -67,6 +68,11 @@ async function clickRun(page) {
   await page.getByRole("button", { name: /Run/ }).click();
 }
 
+async function openOfflineProofFlow(page) {
+  await page.getByRole("button", { name: "Open offline proof flow" }).click();
+  await page.getByText("Offline reload shell", { exact: true }).waitFor({ timeout: 20000 });
+}
+
 async function waitForTerminalText(page, text) {
   const locator = page.locator(".xterm-rows");
   await page.waitForFunction(
@@ -78,6 +84,29 @@ async function waitForTerminalText(page, text) {
     { timeout: 20000 },
   );
   return locator.textContent();
+}
+
+async function verifyVisibleOfflineProof(page) {
+  await openOfflineProofFlow(page);
+  await page.getByText("Runtime cache warm", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: "Prepare Demo Workspace", exact: true }).click();
+  await page.getByText("main.py", { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.getByText("offline_helper.py", { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.waitForFunction(
+    ({ workspaceName }) => {
+      const text = document.body.innerText;
+      return (
+        text.includes("Offline Proof") &&
+        text.includes(workspaceName) &&
+        text.includes("Proof workspace staged")
+      );
+    },
+    { workspaceName: offlineProofWorkspace },
+    { timeout: 30000 },
+  );
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await page.getByText("Offline reload shell", { exact: true }).waitFor({ state: "hidden", timeout: 20000 });
+  await ensureVerificationWorkspace(page);
 }
 
 async function verifyPythonExecutionProof(page) {
@@ -144,6 +173,23 @@ async function verifyPythonMultiFileImports(page) {
   await clickRun(page);
   await waitForTerminalText(page, "import-ok v2 alpha 10");
   await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
+}
+
+async function verifyPandasDataFrame(page) {
+  await createFile(page, "verify-dataframe.py");
+  await setEditorValue(
+    page,
+    'import pandas as pd\n\nframe = pd.DataFrame([\n{"name": "Ada", "score": 42},\n{"name": "Linus", "score": 36},\n])\ndisplay(frame)\n',
+  );
+  await clickRun(page);
+  await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByRole("heading", { name: "DataFrame Preview" }).waitFor({ timeout: 20000 });
+  await page.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout: 20000 });
+  await page.getByRole("columnheader", { name: "name", exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("columnheader", { name: "score", exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("cell", { name: "Ada", exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("cell", { name: "42", exact: true }).waitFor({ timeout: 20000 });
+  await verifyPythonExecutionProof(page);
 }
 
 async function verifyJavaScript(page) {
@@ -223,8 +269,10 @@ async function main() {
     await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
     await ensureVerificationWorkspace(page);
+    await verifyVisibleOfflineProof(page);
     await verifyPython(page);
     await verifyPythonMultiFileImports(page);
+    await verifyPandasDataFrame(page);
     await verifyJavaScript(page);
     await verifyTypeScript(page);
     await verifyMatplotlib(page);
@@ -241,9 +289,11 @@ async function main() {
       baseUrl,
       ideUrl,
       workspace: verificationWorkspace,
+      offlineProofFlow: "ok",
       python: "ok",
       pythonExecutionProof: "ok",
       pythonMultiFileImports: "ok",
+      pandasDataFrame: "ok",
       javascript: "ok",
       typescript: "ok",
       matplotlib: "ok",

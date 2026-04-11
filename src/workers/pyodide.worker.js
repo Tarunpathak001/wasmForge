@@ -369,6 +369,39 @@ json.dumps(results)
   }
 }
 
+async function resetStructuredOutputs() {
+  await pyodide.runPythonAsync(`
+try:
+    import builtins
+    builtins._wasmforge_reset_displays()
+except Exception:
+    pass
+  `)
+}
+
+async function collectTabularOutputs() {
+  const serialized = await pyodide.runPythonAsync(`
+result = "[]"
+try:
+    import builtins
+    result = builtins._wasmforge_collect_displays()
+except Exception:
+    result = "[]"
+result
+  `)
+
+  if (!serialized) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(serialized)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 async function initPyodide() {
   try {
     const { indexURL, scriptURL, lockFileURL } = getPyodideAssetUrls()
@@ -393,7 +426,10 @@ async function initPyodide() {
     // and route it to our buffering system instead of the console.
     pyodide.runPython(`
 import builtins
+import math
 import sys
+
+builtins._wasmforge_display_payloads = []
 
 class _WasmForgeStdout:
     def write(self, s):
@@ -412,9 +448,113 @@ class _WasmForgeStderr:
 def _wasmforge_input(prompt=""):
     return _wasmforgeStdin(prompt)
 
+def _wasmforge_safe_value(value):
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return str(value)
+        return value
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _wasmforge_safe_value(item())
+        except Exception:
+            pass
+
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        try:
+            return isoformat()
+        except Exception:
+            pass
+
+    try:
+        import pandas as _pd
+        is_missing = _pd.isna(value)
+        if isinstance(is_missing, bool) and is_missing:
+            return None
+    except Exception:
+        pass
+
+    return str(value)
+
+def _wasmforge_capture_table(obj):
+    try:
+        import pandas as pd
+    except Exception:
+        return False
+
+    if isinstance(obj, pd.Series):
+        frame = obj.to_frame()
+        kind = "series"
+        title = obj.name or f"Series {len(builtins._wasmforge_display_payloads) + 1}"
+    elif isinstance(obj, pd.DataFrame):
+        frame = obj
+        kind = "dataframe"
+        title = frame.attrs.get("title") or f"DataFrame {len(builtins._wasmforge_display_payloads) + 1}"
+    else:
+        return False
+
+    row_limit = 100
+    column_limit = 12
+    preview = frame.iloc[:row_limit, :column_limit]
+
+    rows = [
+        [_wasmforge_safe_value(value) for value in row]
+        for row in preview.itertuples(index=False, name=None)
+    ]
+    index = [_wasmforge_safe_value(value) for value in preview.index.tolist()]
+    columns = [str(column) for column in preview.columns.tolist()]
+
+    builtins._wasmforge_display_payloads.append({
+        "id": f"Display {len(builtins._wasmforge_display_payloads) + 1}",
+        "kind": kind,
+        "title": str(title),
+        "columns": columns,
+        "rows": rows,
+        "index": index,
+        "rowCount": int(frame.shape[0]),
+        "columnCount": int(frame.shape[1]),
+        "truncatedRows": max(0, int(frame.shape[0]) - int(preview.shape[0])),
+        "truncatedColumns": max(0, int(frame.shape[1]) - int(preview.shape[1])),
+    })
+    return True
+
+def _wasmforge_display(*objects):
+    if not objects:
+        return None
+
+    for obj in objects:
+        if _wasmforge_capture_table(obj):
+            continue
+
+        text = str(obj)
+        if text:
+            postStdout(text)
+            if not text.endswith("\\n"):
+                postStdout("\\n")
+
+    return objects[0] if len(objects) == 1 else objects
+
+def _wasmforge_reset_displays():
+    builtins._wasmforge_display_payloads.clear()
+
+def _wasmforge_collect_displays():
+    import json
+
+    payload = json.dumps(builtins._wasmforge_display_payloads)
+    builtins._wasmforge_display_payloads.clear()
+    return payload
+
 sys.stdout = _WasmForgeStdout()
 sys.stderr = _WasmForgeStderr()
 builtins.input = _wasmforge_input
+builtins.display = _wasmforge_display
+builtins._wasmforge_reset_displays = _wasmforge_reset_displays
+builtins._wasmforge_collect_displays = _wasmforge_collect_displays
     `)
 
     self.postMessage({ type: 'load_progress', msg: 'Loading standard Python packages...' })
@@ -462,6 +602,7 @@ async function runPython(code, filename = 'main.py') {
     usesMatplotlib = packageState.usesMatplotlib
 
     await resetWorkspaceImportState()
+    await resetStructuredOutputs()
 
     if (usesMatplotlib) {
       await configureMatplotlibBackend()
@@ -482,6 +623,17 @@ runpy.run_path(${JSON.stringify(workspacePath)}, run_name="__main__")
     }
     error = errorMsg || 'Python execution failed'
   } finally {
+    try {
+      const tables = await collectTabularOutputs()
+      if (tables.length > 0) {
+        self.postMessage({ type: 'tables', tables })
+      }
+    } catch (tableErr) {
+      const tableMessage = `[WasmForge] Failed to capture pandas output: ${tableErr.message || tableErr}\n`
+      self.postMessage({ type: 'stderr', data: `\n${tableMessage}` })
+      error ||= tableMessage.trim()
+    }
+
     if (usesMatplotlib) {
       try {
         const figures = await collectMatplotlibFigures()

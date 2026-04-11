@@ -46,6 +46,40 @@ function normalizeFigures(figures) {
     .filter(Boolean)
 }
 
+function normalizeTables(tables) {
+  if (!Array.isArray(tables)) {
+    return []
+  }
+
+  return tables
+    .map((table, index) => {
+      const columns = Array.isArray(table?.columns)
+        ? table.columns.map((column) => String(column ?? ''))
+        : []
+      const rows = Array.isArray(table?.rows)
+        ? table.rows.map((row) => (Array.isArray(row) ? row : []))
+        : []
+
+      if (columns.length === 0 && rows.length === 0) {
+        return null
+      }
+
+      return {
+        id: String(table?.id || `display-${index + 1}`).trim() || `display-${index + 1}`,
+        kind: String(table?.kind || 'dataframe').trim().toLowerCase() || 'dataframe',
+        title: String(table?.title || `Display ${index + 1}`).trim() || `Display ${index + 1}`,
+        columns,
+        rows,
+        index: Array.isArray(table?.index) ? table.index : [],
+        rowCount: Number.isFinite(table?.rowCount) ? Number(table.rowCount) : rows.length,
+        columnCount: Number.isFinite(table?.columnCount) ? Number(table.columnCount) : columns.length,
+        truncatedRows: Number.isFinite(table?.truncatedRows) ? Number(table.truncatedRows) : 0,
+        truncatedColumns: Number.isFinite(table?.truncatedColumns) ? Number(table.truncatedColumns) : 0,
+      }
+    })
+    .filter(Boolean)
+}
+
 function formatDuration(durationMs) {
   if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 0) {
     return null
@@ -77,14 +111,26 @@ function formatTimestamp(executedAt) {
   }).format(date)
 }
 
-function getStatusTone({ isReady, isRunning, hasError, hasFigures }) {
+function formatCellValue(value) {
+  if (value === null || value === undefined) {
+    return 'null'
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false'
+  }
+
+  return String(value)
+}
+
+function getStatusTone({ isReady, isRunning, hasError, hasFigures, hasTables }) {
   if (hasError) {
     return DANGER_TONE
   }
   if (isRunning) {
     return WARNING_TONE
   }
-  if (hasFigures) {
+  if (hasFigures || hasTables) {
     return SUCCESS_TONE
   }
   if (!isReady) {
@@ -284,6 +330,222 @@ function FigurePreview({ figure, active, onClick }) {
   )
 }
 
+function TablePreviewButton({ table, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '8px',
+        width: '100%',
+        borderRadius: '12px',
+        border: `1px solid ${active ? ACCENT_BORDER : PANEL_BORDER}`,
+        background: active ? ACCENT_BG : PANEL_BG,
+        padding: '12px',
+        cursor: 'pointer',
+        textAlign: 'left',
+        color: PANEL_TEXT,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%' }}>
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              color: PANEL_TEXT,
+              fontSize: '13px',
+              fontWeight: 700,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {table.title}
+          </div>
+          <div style={{ color: PANEL_MUTED, fontSize: '11px', marginTop: '2px' }}>
+            {table.kind === 'series' ? 'Series output' : 'DataFrame output'}
+          </div>
+        </div>
+        <Chip tone={active ? 'accent' : 'default'}>
+          {table.rowCount}×{table.columnCount}
+        </Chip>
+      </div>
+      <div style={{ color: PANEL_MUTED, fontSize: '12px', lineHeight: 1.6 }}>
+        {table.columns.slice(0, 4).join(', ')}
+        {table.columns.length > 4 ? '…' : ''}
+      </div>
+    </button>
+  )
+}
+
+function DataTableView({ table, fileLabel }) {
+  const hasIndex = Array.isArray(table.index) && table.index.length === table.rows.length
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${PANEL_BORDER}`,
+        borderRadius: '14px',
+        background: PANEL_SURFACE,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          padding: '14px 16px',
+          borderBottom: `1px solid ${PANEL_BORDER}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+          <div>
+            <div role="heading" aria-level={3} style={{ color: PANEL_TEXT, fontSize: '14px', fontWeight: 800 }}>
+              DataFrame Preview
+            </div>
+          <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
+            {table.title}
+          </div>
+        </div>
+        <Chip tone="success">
+          {table.kind === 'series' ? 'Series' : 'DataFrame'}
+        </Chip>
+      </div>
+
+      <div style={{ padding: '14px' }}>
+        <div
+          style={{
+            overflowX: 'auto',
+            borderRadius: '12px',
+            border: `1px solid ${PANEL_BORDER}`,
+            background: PANEL_BG,
+          }}
+        >
+          <table
+            aria-label={`DataFrame ${table.title}`}
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              minWidth: '420px',
+            }}
+          >
+            <thead>
+              <tr style={{ background: PANEL_SUBTLE }}>
+                {hasIndex ? (
+                  <th
+                    scope="col"
+                    style={{
+                      padding: '10px 12px',
+                      borderBottom: `1px solid ${PANEL_BORDER}`,
+                      borderRight: `1px solid ${PANEL_BORDER}`,
+                      color: PANEL_MUTED_STRONG,
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      textAlign: 'left',
+                    }}
+                  >
+                    Index
+                  </th>
+                ) : null}
+                {table.columns.map((column) => (
+                  <th
+                    key={column}
+                    scope="col"
+                    style={{
+                      padding: '10px 12px',
+                      borderBottom: `1px solid ${PANEL_BORDER}`,
+                      borderRight: `1px solid ${PANEL_BORDER}`,
+                      color: PANEL_MUTED_STRONG,
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      textAlign: 'left',
+                    }}
+                  >
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={`${table.id}-row-${rowIndex}`}>
+                  {hasIndex ? (
+                    <td
+                      style={{
+                        padding: '10px 12px',
+                        borderBottom: `1px solid ${PANEL_BORDER}`,
+                        borderRight: `1px solid ${PANEL_BORDER}`,
+                        color: PANEL_MUTED_STRONG,
+                        fontSize: '12px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {formatCellValue(table.index[rowIndex])}
+                    </td>
+                  ) : null}
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={`${table.id}-row-${rowIndex}-cell-${cellIndex}`}
+                      style={{
+                        padding: '10px 12px',
+                        borderBottom: `1px solid ${PANEL_BORDER}`,
+                        borderRight: `1px solid ${PANEL_BORDER}`,
+                        color: PANEL_TEXT,
+                        fontSize: '12px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {formatCellValue(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div
+          style={{
+            marginTop: '12px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: '10px',
+          }}
+        >
+          <MetaTile label="Rows" value={String(table.rowCount)} tone={ACCENT_TONE} />
+          <MetaTile label="Columns" value={String(table.columnCount)} tone={PANEL_MUTED_STRONG} />
+          <MetaTile label="Source" value={fileLabel} tone={PANEL_MUTED_STRONG} />
+        </div>
+
+        {table.truncatedRows > 0 || table.truncatedColumns > 0 ? (
+          <div
+            style={{
+              marginTop: '12px',
+              color: PANEL_MUTED,
+              fontSize: '12px',
+              lineHeight: 1.6,
+            }}
+          >
+            Preview limited to the first {table.rowCount - table.truncatedRows} row{table.rowCount - table.truncatedRows === 1 ? '' : 's'}
+            {table.truncatedColumns > 0
+              ? ` and ${table.columnCount - table.truncatedColumns} column${table.columnCount - table.truncatedColumns === 1 ? '' : 's'}`
+              : ''}
+            . Full shape is {table.rowCount}×{table.columnCount}.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function PythonOutputPanel({
   activeFile,
   result,
@@ -292,7 +554,9 @@ export default function PythonOutputPanel({
   status,
 }) {
   const figures = useMemo(() => normalizeFigures(result?.figures), [result?.figures])
+  const tables = useMemo(() => normalizeTables(result?.tables), [result?.tables])
   const [selectedFigureId, setSelectedFigureId] = useState(null)
+  const [selectedTableId, setSelectedTableId] = useState(null)
 
   useEffect(() => {
     if (figures.length === 0) {
@@ -308,26 +572,59 @@ export default function PythonOutputPanel({
     })
   }, [figures, result?.executedAt, result?.filename])
 
+  useEffect(() => {
+    if (tables.length === 0) {
+      setSelectedTableId(null)
+      return
+    }
+
+    setSelectedTableId((current) => {
+      if (current && tables.some((table) => table.id === current)) {
+        return current
+      }
+      return tables[0].id
+    })
+  }, [tables, result?.executedAt, result?.filename])
+
   const selectedFigure = figures.find((figure) => figure.id === selectedFigureId) || figures[0] || null
+  const selectedTable = tables.find((table) => table.id === selectedTableId) || tables[0] || null
   const hasError = Boolean(result?.error)
   const hasFigures = figures.length > 0
+  const hasTables = tables.length > 0
   const durationLabel = formatDuration(result?.durationMs)
   const executedAtLabel = formatTimestamp(result?.executedAt)
   const fileLabel = result?.filename || activeFile || 'No Python file selected'
-  const statusTone = getStatusTone({ isReady, isRunning, hasError, hasFigures })
+  const statusTone = getStatusTone({ isReady, isRunning, hasError, hasFigures, hasTables })
   const localExecutionLabel = durationLabel
     ? `Executed on this device in ${durationLabel}`
     : isRunning
       ? 'Python is executing inside a local browser worker.'
       : 'Python runs inside a local browser worker on this device.'
-
+  const richOutputTone = hasError
+    ? 'danger'
+    : isRunning
+      ? 'warning'
+      : hasTables && hasFigures
+        ? 'success'
+        : hasTables
+          ? 'success'
+          : hasFigures
+            ? 'success'
+            : 'accent'
+  const richOutputLabel = hasError
+    ? 'Error'
+    : isRunning
+      ? 'Running'
+      : hasTables && hasFigures
+        ? 'Rich output'
+        : hasTables
+          ? 'Tables ready'
+          : hasFigures
+            ? 'Figures ready'
+            : 'Idle'
   const emptyMessage = activeFile
-    ? `Run ${activeFile} to render Matplotlib figures here.`
-    : 'Run a Python file that calls matplotlib.pyplot.show() to render figures here.'
-
-  const layout = figures.length > 1
-    ? 'minmax(280px, 1.2fr) minmax(220px, 0.8fr)'
-    : '1fr'
+    ? `Run ${activeFile} and call display(df) or matplotlib.pyplot.show() to render structured Python output here.`
+    : 'Run a Python file that calls display(df) or matplotlib.pyplot.show() to render structured output here.'
 
   return (
     <div
@@ -358,7 +655,7 @@ export default function PythonOutputPanel({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: PANEL_TEXT, fontSize: '16px', fontWeight: 800 }}>
+            <div role="heading" aria-level={2} style={{ color: PANEL_TEXT, fontSize: '16px', fontWeight: 800 }}>
               Python Output
             </div>
             <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
@@ -366,8 +663,8 @@ export default function PythonOutputPanel({
             </div>
           </div>
 
-          <Chip tone={hasError ? 'danger' : isRunning ? 'warning' : hasFigures ? 'success' : 'accent'}>
-            {hasError ? 'Error' : isRunning ? 'Running' : hasFigures ? 'Figures ready' : 'Idle'}
+          <Chip tone={richOutputTone}>
+            {richOutputLabel}
           </Chip>
         </div>
 
@@ -414,7 +711,7 @@ export default function PythonOutputPanel({
       {isRunning ? (
         <StateCard
           title="Rendering output"
-          body="Python is still executing. Figures will appear here as soon as the worker finishes."
+          body="Python is still executing. Structured output will appear here as soon as the worker finishes."
           tone={WARNING_TONE}
         >
           <div
@@ -447,21 +744,65 @@ export default function PythonOutputPanel({
         />
       ) : null}
 
-      {!hasError && !isRunning && !hasFigures ? (
+      {!hasError && !isRunning && !hasTables && !hasFigures ? (
         <StateCard
-          title="No figures yet"
+          title="No structured output yet"
           body={emptyMessage}
           tone={PANEL_MUTED_STRONG}
         />
+      ) : null}
+
+      {hasTables ? (
+        <div style={{ display: 'grid', gap: '14px', marginTop: hasError || isRunning ? '16px' : 0 }}>
+          {selectedTable ? (
+            <DataTableView table={selectedTable} fileLabel={fileLabel} />
+          ) : null}
+
+          {tables.length > 1 ? (
+            <div
+              style={{
+                border: `1px solid ${PANEL_BORDER}`,
+                borderRadius: '14px',
+                background: PANEL_SURFACE,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderBottom: `1px solid ${PANEL_BORDER}`,
+                }}
+              >
+                <div role="heading" aria-level={3} style={{ color: PANEL_TEXT, fontSize: '14px', fontWeight: 800 }}>
+                  Display Stack
+                </div>
+                <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
+                  Switch between captured DataFrame and Series outputs.
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: '12px', padding: '14px' }}>
+                {tables.map((table) => (
+                  <TablePreviewButton
+                    key={table.id}
+                    table={table}
+                    active={table.id === selectedTableId}
+                    onClick={() => setSelectedTableId(table.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {hasFigures ? (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: layout,
+            gridTemplateColumns: figures.length > 1 ? 'minmax(280px, 1.2fr) minmax(220px, 0.8fr)' : '1fr',
             gap: '14px',
             alignItems: 'start',
+            marginTop: hasTables ? '16px' : 0,
           }}
         >
           <div
@@ -484,7 +825,7 @@ export default function PythonOutputPanel({
               }}
             >
               <div>
-                <div style={{ color: PANEL_TEXT, fontSize: '14px', fontWeight: 800 }}>
+                <div role="heading" aria-level={3} style={{ color: PANEL_TEXT, fontSize: '14px', fontWeight: 800 }}>
                   Figure Preview
                 </div>
                 <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>
@@ -563,7 +904,7 @@ export default function PythonOutputPanel({
                   borderBottom: `1px solid ${PANEL_BORDER}`,
                 }}
               >
-                <div style={{ color: PANEL_TEXT, fontSize: '14px', fontWeight: 800 }}>
+                <div role="heading" aria-level={3} style={{ color: PANEL_TEXT, fontSize: '14px', fontWeight: 800 }}>
                   Gallery
                 </div>
                 <div style={{ color: PANEL_MUTED, fontSize: '12px', marginTop: '4px' }}>

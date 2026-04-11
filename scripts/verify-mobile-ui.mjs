@@ -64,6 +64,29 @@ async function setEditorValue(page, content) {
   await page.keyboard.insertText(content);
 }
 
+async function verifyMobileOfflineProof(page) {
+  await page.getByRole("button", { name: "Open offline proof flow" }).click();
+  await page.getByText("Offline reload shell", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await page.getByText("Offline reload shell", { exact: true }).waitFor({ state: "hidden", timeout: 20000 });
+}
+
+async function verifyMobileDataFrame(page) {
+  await page.getByRole("button", { name: "Explorer", exact: true }).click();
+  await createFile(page, "mobile-dataframe.py");
+  await page.getByRole("button", { name: "Editor" }).click();
+  await setEditorValue(
+    page,
+    'import pandas as pd\n\nframe = pd.DataFrame([\n{"name": "Ada", "score": 42},\n{"name": "Linus", "score": 36},\n])\ndisplay(frame)\n',
+  );
+  await page.getByLabel("Run current file").click();
+  await page.getByRole("button", { name: "Console" }).click();
+  await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByRole("heading", { name: "DataFrame Preview" }).waitFor({ timeout: 20000 });
+  await page.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout: 20000 });
+  await page.getByRole("cell", { name: "Ada", exact: true }).waitFor({ timeout: 20000 });
+}
+
 async function main() {
   await ensureArtifactsDir();
   const browser = await chromium.launch({ headless: true });
@@ -96,8 +119,11 @@ async function main() {
     await page.getByRole("button", { name: "Search" }).click();
     await page.getByPlaceholder("Search files in this workspace").fill("mobile");
     await page.getByPlaceholder("Search files in this workspace").waitFor();
+    await verifyMobileOfflineProof(page);
+    await verifyMobileDataFrame(page);
 
     await page.getByRole("button", { name: "Editor" }).click();
+    await page.getByText(mobileFilename, { exact: true }).first().click();
     await setEditorValue(page, 'const square = (value: number) => value * value;\nconsole.log("ts-mobile", square(7));\n');
 
     await page.getByLabel("Run current file").waitFor({ timeout: 20000 });
@@ -128,6 +154,8 @@ async function main() {
       workspace: verificationWorkspace,
       mobileNavigation: "ok",
       mobileSearch: "ok",
+      mobileOfflineProof: "ok",
+      mobileDataFrame: "ok",
       mobileRun: "ok",
       mobileConsole: "ok",
       consoleErrors,

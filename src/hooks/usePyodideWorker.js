@@ -23,6 +23,7 @@ export function usePyodideWorker({
   onStdout,
   onStderr,
   onFigures,
+  onTables,
   onReady,
   onDone,
   onProgress,
@@ -38,6 +39,7 @@ export function usePyodideWorker({
   const onStdoutRef = useRef(onStdout)
   const onStderrRef = useRef(onStderr)
   const onFiguresRef = useRef(onFigures)
+  const onTablesRef = useRef(onTables)
   const onReadyRef = useRef(onReady)
   const onDoneRef = useRef(onDone)
   const onProgressRef = useRef(onProgress)
@@ -58,6 +60,10 @@ export function usePyodideWorker({
   useEffect(() => {
     onFiguresRef.current = onFigures
   }, [onFigures])
+
+  useEffect(() => {
+    onTablesRef.current = onTables
+  }, [onTables])
 
   useEffect(() => {
     onReadyRef.current = onReady
@@ -149,7 +155,7 @@ export function usePyodideWorker({
     )
 
     worker.onmessage = (event) => {
-      const { type, data, msg, error, prompt, figures, durationMs } = event.data
+      const { type, data, msg, error, prompt, figures, tables, durationMs } = event.data
 
       switch (type) {
         case 'ready':
@@ -173,6 +179,10 @@ export function usePyodideWorker({
 
         case 'figures':
           onFiguresRef.current?.(figures ?? [])
+          break
+
+        case 'tables':
+          onTablesRef.current?.(tables ?? [])
           break
 
         case 'load_progress':

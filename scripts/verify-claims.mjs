@@ -9,8 +9,10 @@ const workspaceRoot = path.resolve(__dirname, "..");
 const artifactsDir = path.join(workspaceRoot, "artifacts");
 const profileDir = path.join(artifactsDir, "playwright-profile-claims");
 const baseUrl = process.env.WASMFORGE_VERIFY_URL || "http://localhost:5173";
+const landingUrl = new URL("/", baseUrl).toString();
 const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = "playwright-claims";
+const offlineProofWorkspace = "offline-proof-demo";
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -40,6 +42,13 @@ async function ensureVerificationWorkspace(page) {
   await page.getByPlaceholder("workspace-name").fill(verificationWorkspace);
   await page.getByRole("button", { name: "Add" }).click();
   await page.locator(`button[title="${verificationWorkspace}"]`).first().waitFor();
+}
+
+async function selectWorkspace(page, workspaceName) {
+  await openWorkspaceMenu(page);
+  await page.getByRole("button", {
+    name: new RegExp(`^${escapeRegExp(workspaceName)}$`),
+  }).click();
 }
 
 async function createFile(page, filename) {
@@ -72,6 +81,26 @@ async function clickRun(page) {
   await page.getByRole("button", { name: /Run/ }).click();
 }
 
+async function openOfflineProofFlow(page) {
+  await page.getByRole("button", { name: "Open offline proof flow" }).click();
+  await page.getByText("Offline reload shell", { exact: true }).waitFor({ timeout: 20000 });
+}
+
+async function waitForRunEnabled(page, timeout = 60000) {
+  const runButton = page.getByRole("button", { name: /Run/ });
+  await runButton.waitFor({ timeout });
+  await page.waitForFunction(
+    () => {
+      const button = Array.from(document.querySelectorAll("button")).find((candidate) =>
+        /\bRun\b/.test(candidate.textContent || ""),
+      );
+      return Boolean(button) && !button.disabled;
+    },
+    undefined,
+    { timeout },
+  );
+}
+
 async function showTerminal(page) {
   await page.getByText("TERMINAL", { exact: true }).click();
 }
@@ -83,6 +112,24 @@ async function waitForTerminalText(page, text, timeout = 20000) {
       return Boolean(element?.textContent?.includes(expected));
     },
     { selector: ".xterm-rows", expected: text },
+    { timeout },
+  );
+}
+
+async function waitForEditorText(page, text, timeout = 20000) {
+  await page.waitForFunction(
+    (expected) => {
+      const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
+      const expectedText = normalize(expected);
+      const candidates = [
+        document.querySelector(".monaco-editor .view-lines")?.textContent,
+        document.querySelector(".monaco-editor")?.textContent,
+        document.body?.innerText,
+      ];
+
+      return candidates.some((candidate) => normalize(candidate).includes(expectedText));
+    },
+    text,
     { timeout },
   );
 }
@@ -115,6 +162,49 @@ async function verifyPythonExecutionProof(page) {
 async function waitForFigure(page, timeout = 60000) {
   await page.getByText("Python Output", { exact: true }).waitFor({ timeout });
   await page.locator('img[alt*="Figure"]').first().waitFor({ timeout });
+}
+
+async function verifyLandingOfflineProof(page) {
+  await page.goto(landingUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("link", { name: "See the proof" }).click();
+  await page.getByText("90 seconds. No network.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).waitFor({ timeout: 20000 });
+
+  await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).click();
+  await page.getByRole("button", { name: /^Wi-Fi: OFF$/ }).waitFor({ timeout: 20000 });
+  await page.getByText("Turn Wi-Fi off. Airplane Mode is the real test.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Run the file. The terminal or result panel still responds immediately.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Hard refresh. The shell reloads from cache instead of a server.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("The same workspace is still there because files persist locally.", { exact: true }).waitFor({ timeout: 20000 });
+
+  await page.getByRole("button", { name: /^Wi-Fi: OFF$/ }).click();
+  await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).waitFor({ timeout: 20000 });
+
+  await page.context().setOffline(true);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByText("90 seconds. No network.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).waitFor({ timeout: 20000 });
+  await page.context().setOffline(false);
+}
+
+async function prepareVisibleOfflineProof(page) {
+  await openOfflineProofFlow(page);
+  await page.getByText("Offline reload shell", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: "Prepare Demo Workspace", exact: true }).click();
+  await page.getByText("main.py", { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.getByText("offline_helper.py", { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.waitForFunction(
+    ({ workspaceName }) => {
+      const text = document.body.innerText;
+      return (
+        text.includes("Offline Proof") &&
+        text.includes(workspaceName) &&
+        text.includes("Ready for Airplane Mode")
+      );
+    },
+    { workspaceName: offlineProofWorkspace },
+    { timeout: 60000 },
+  );
 }
 
 async function ensureIdeLoaded(page) {
@@ -192,24 +282,18 @@ async function readIsolationState(page) {
 
 async function verifyOfflinePythonFlow(page) {
   await showTerminal(page);
-  await createFile(page, "offline_helper.py");
-  await setEditorValue(
-    page,
-    'import numpy as np\n\n\ndef describe(name):\n    return f"offline-ok {int(np.arange(3).sum())} {name}"\n',
-  );
-
-  await createFile(page, "offline.py");
-  await setEditorValue(
-    page,
-    'from offline_helper import describe\n\nname = input("Name: ")\nprint(describe(name))\n',
-  );
+  await prepareVisibleOfflineProof(page);
+  await showTerminal(page);
+  await page.getByText("main.py", { exact: true }).first().click();
 
   await page.context().setOffline(true);
+  await waitForRunEnabled(page);
   await clickRun(page);
-  await waitForTerminalText(page, "Name:");
+  await waitForTerminalText(page, "Offline proof > type any name:");
   await page.keyboard.insertText("cached");
   await page.keyboard.press("Enter");
-  await waitForTerminalText(page, "offline-ok 3 cached");
+  await waitForTerminalText(page, "offline-proof ok for cached");
+  await waitForTerminalText(page, "helper-import ok 20");
   await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
   await page.getByText(/^Local run /).first().waitFor({ timeout: 20000 });
   await verifyPythonExecutionProof(page);
@@ -218,14 +302,49 @@ async function verifyOfflinePythonFlow(page) {
   await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
   await page.waitForTimeout(1200);
   await showTerminal(page);
-  await page.getByText("offline.py", { exact: true }).first().click();
+  await page.getByText("main.py", { exact: true }).first().click();
+  await waitForRunEnabled(page);
+  await waitForEditorText(page, "Offline proof > type any name:");
   await clickRun(page);
-  await waitForTerminalText(page, "Name:");
+  await waitForTerminalText(page, "Offline proof > type any name:");
   await page.keyboard.insertText("reload");
   await page.keyboard.press("Enter");
-  await waitForTerminalText(page, "offline-ok 3 reload");
+  await waitForTerminalText(page, "offline-proof ok for reload");
+  await waitForTerminalText(page, "helper-import ok 20");
   await waitForTerminalText(page, "[Local runtime] Executed on this device in ");
 
+  await page.context().setOffline(false);
+  await ensureVerificationWorkspace(page);
+}
+
+async function verifyDataFrameOfflineFlow(page) {
+  await createFile(page, "offline-dataframe.py");
+  await setEditorValue(
+    page,
+    'import pandas as pd\n\nframe = pd.DataFrame([\n{"name": "Ada", "score": 42},\n{"name": "Linus", "score": 36},\n])\ndisplay(frame)\n',
+  );
+
+  await clickRun(page);
+  await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByRole("heading", { name: "DataFrame Preview" }).waitFor({ timeout: 20000 });
+  await page.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout: 20000 });
+  await page.getByRole("columnheader", { name: "name", exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("columnheader", { name: "score", exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("cell", { name: "Ada", exact: true }).waitFor({ timeout: 20000 });
+  await verifyPythonExecutionProof(page);
+
+  await page.context().setOffline(true);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await page.waitForTimeout(1200);
+  await page.getByText("offline-dataframe.py", { exact: true }).first().click();
+  await waitForRunEnabled(page);
+  await clickRun(page);
+  await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByRole("heading", { name: "DataFrame Preview" }).waitFor({ timeout: 20000 });
+  await page.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout: 20000 });
+  await page.getByRole("cell", { name: "Linus", exact: true }).waitFor({ timeout: 20000 });
+  await verifyPythonExecutionProof(page);
   await page.context().setOffline(false);
 }
 
@@ -360,17 +479,20 @@ async function verifyRestartedState(page) {
   await clickRun(page);
   await page.getByText("pg-persist", { exact: true }).waitFor({ timeout: 20000 });
 
+  await selectWorkspace(page, offlineProofWorkspace);
   await page.context().setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
   await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
   await page.waitForTimeout(1200);
   await showTerminal(page);
-  await page.getByText("offline.py", { exact: true }).first().click();
+  await page.getByText("main.py", { exact: true }).first().click();
+  await waitForRunEnabled(page);
   await clickRun(page);
-  await waitForTerminalText(page, "Name:");
+  await waitForTerminalText(page, "Offline proof > type any name:");
   await page.keyboard.insertText("restart");
   await page.keyboard.press("Enter");
-  await waitForTerminalText(page, "offline-ok 3 restart");
+  await waitForTerminalText(page, "offline-proof ok for restart");
+  await waitForTerminalText(page, "helper-import ok 20");
   await verifyPythonExecutionProof(page);
   await page.context().setOffline(false);
 }
@@ -411,10 +533,20 @@ async function main() {
       throw new Error("Service worker cache/runtime assets were not fully detected");
     }
 
+    await verifyLandingOfflineProof(page);
+    report.landingOfflineProof = "ok";
+
+    await ensureIdeLoaded(page);
+    await ensureVerificationWorkspace(page);
+
     await verifyOfflinePythonFlow(page);
+    report.visibleOfflineProof = "ok";
     report.offlinePython = "ok";
     report.pythonExecutionProof = "ok";
     report.pythonMultiFileImports = "ok";
+
+    await verifyDataFrameOfflineFlow(page);
+    report.offlinePandasDataFrame = "ok";
 
     await verifyMatplotlibOfflineFlow(page);
     report.offlineMatplotlib = "ok";

@@ -788,6 +788,7 @@ export default function App({ onNavigateHome }) {
   const editorRef = useRef(null);
   const editorSubscriptionRef = useRef(null);
   const activeFileRef = useRef(DEFAULT_FILENAME);
+  const closingTabRef = useRef("");
   const activeWorkspaceRef = useRef(activeWorkspace);
   const isMountedRef = useRef(true);
   const recoveryWritesRef = useRef(readRecoveryEntries(activeWorkspace));
@@ -856,18 +857,27 @@ export default function App({ onNavigateHome }) {
 
   useEffect(() => {
     activeFileRef.current = activeFile;
+    if (closingTabRef.current && activeFile !== closingTabRef.current) {
+      closingTabRef.current = "";
+    }
   }, [activeFile]);
 
   useEffect(() => {
     const availableFileNames = files.map((file) => file.name);
     setOpenFiles((prev) => {
       const next = prev.filter((filename) => availableFileNames.includes(filename));
+      const isClosingActiveTab = Boolean(closingTabRef.current) && activeFile === closingTabRef.current;
 
-      if (activeFile && availableFileNames.includes(activeFile) && !next.includes(activeFile)) {
+      if (
+        activeFile &&
+        availableFileNames.includes(activeFile) &&
+        !next.includes(activeFile) &&
+        !isClosingActiveTab
+      ) {
         next.push(activeFile);
       }
 
-      if (next.length === 0 && activeFile && availableFileNames.includes(activeFile)) {
+      if (next.length === 0 && activeFile && availableFileNames.includes(activeFile) && !isClosingActiveTab) {
         next.push(activeFile);
       }
 
@@ -2672,6 +2682,10 @@ export default function App({ onNavigateHome }) {
       return;
     }
 
+    if (filename === activeFileRef.current) {
+      closingTabRef.current = filename;
+    }
+
     const nextTabs = openFiles.filter((fileName) => fileName !== filename);
     setOpenFiles(nextTabs);
 
@@ -2681,10 +2695,13 @@ export default function App({ onNavigateHome }) {
 
     const nextActive = nextTabs[nextTabs.length - 1] ?? "";
     if (nextActive) {
+      activeFileRef.current = nextActive;
+      setActiveFile(nextActive);
       void handleFileSelect(nextActive);
       return;
     }
 
+    activeFileRef.current = "";
     setActiveFile("");
   }, [handleFileSelect, isJsRunning, isRunning, isSqlRunning, openFiles]);
 
@@ -3882,15 +3899,12 @@ function ActivityButton({ active = false, children, disabled = false, title, onC
 function HeaderTab({ active = false, filename, onSelect, onClose }) {
   const visual = getFileVisualMeta(filename);
   return (
-    <button
+    <div
       className="wf-tab"
-      type="button"
-      onClick={onSelect}
       style={{
         height: "32px",
         minWidth: "132px",
         maxWidth: "228px",
-        padding: "0 12px",
         border: "none",
         borderTop: `1px solid ${active ? "var(--ide-shell-accent)" : "transparent"}`,
         borderRight: "1px solid var(--ide-shell-border)",
@@ -3898,64 +3912,83 @@ function HeaderTab({ active = false, filename, onSelect, onClose }) {
         color: active ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
         display: "flex",
         alignItems: "center",
-        gap: "8px",
-        cursor: "pointer",
         flexShrink: 0,
       }}
     >
-      <span
-        style={{
-          width: "16px",
-          height: "16px",
-          borderRadius: "3px",
-          display: "grid",
-          placeItems: "center",
-          background: visual.surface,
-          color: visual.accent,
-          fontSize: "8px",
-          fontWeight: 700,
-          flexShrink: 0,
-          boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-border-strong) 34%, transparent)",
-        }}
-      >
-        {visual.label}
-      </span>
-      <span
+      <button
+        type="button"
+        onClick={onSelect}
         style={{
           flex: 1,
           minWidth: 0,
-          fontFamily: '"Cascadia Code", Consolas, monospace',
-          fontSize: "12px",
-          fontWeight: active ? 700 : 600,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          textAlign: "left",
-          letterSpacing: "0.01em",
+          border: "none",
+          background: "transparent",
+          color: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "0 0 0 12px",
+          cursor: "pointer",
         }}
       >
-        {filename}
-      </span>
-      <span
-        onClick={(event) => {
-          event.stopPropagation();
-          onClose();
-        }}
+        <span
+          style={{
+            width: "16px",
+            height: "16px",
+            borderRadius: "3px",
+            display: "grid",
+            placeItems: "center",
+            background: visual.surface,
+            color: visual.accent,
+            fontSize: "8px",
+            fontWeight: 700,
+            flexShrink: 0,
+            boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--ide-shell-border-strong) 34%, transparent)",
+          }}
+        >
+          {visual.label}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontFamily: '"Cascadia Code", Consolas, monospace',
+            fontSize: "12px",
+            fontWeight: active ? 700 : 600,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            textAlign: "left",
+            letterSpacing: "0.01em",
+          }}
+        >
+          {filename}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={`Close ${filename}`}
+        title={`Close ${filename}`}
         style={{
           color: active ? "var(--ide-shell-text-soft)" : "var(--ide-shell-muted)",
           fontSize: "12px",
           lineHeight: 1,
-          width: "16px",
-          height: "16px",
+          width: "24px",
+          height: "100%",
           display: "grid",
           placeItems: "center",
+          border: "none",
           borderRadius: "3px",
           background: active ? "var(--ide-shell-accent-soft)" : "transparent",
+          cursor: "pointer",
+          flexShrink: 0,
+          marginRight: "4px",
         }}
       >
         ×
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -3985,76 +4018,91 @@ function BottomPanelTab({ active = false, children, onClick }) {
 function MobileHeaderTab({ active = false, filename, onSelect, onClose }) {
   const visual = getFileVisualMeta(filename);
   return (
-    <button
+    <div
       className="wf-mobile-tab"
-      type="button"
-      onClick={onSelect}
       style={{
         height: "100%",
         minWidth: "124px",
         maxWidth: "186px",
-        padding: "0 12px",
         border: "none",
         borderTop: `2px solid ${active ? "var(--ide-shell-accent)" : "transparent"}`,
         background: active ? "var(--ide-shell-panel)" : "var(--ide-shell-elevated)",
         color: active ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
         display: "flex",
         alignItems: "center",
-        gap: "8px",
         flexShrink: 0,
-        cursor: "pointer",
       }}
     >
-      <span
-        style={{
-          width: "14px",
-          height: "14px",
-          borderRadius: "3px",
-          display: "grid",
-          placeItems: "center",
-          background: visual.surface,
-          color: visual.accent,
-          fontSize: "8px",
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
-      >
-        {visual.label}
-      </span>
-      <span
+      <button
+        type="button"
+        onClick={onSelect}
         style={{
           flex: 1,
           minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          textAlign: "left",
-          fontFamily: '"Cascadia Code", Consolas, monospace',
-          fontSize: "12px",
-          letterSpacing: "0.01em",
+          border: "none",
+          background: "transparent",
+          color: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "0 0 0 12px",
+          cursor: "pointer",
         }}
       >
-        {filename}
-      </span>
-      <span
-        onClick={(event) => {
-          event.stopPropagation();
-          onClose();
-        }}
+        <span
+          style={{
+            width: "14px",
+            height: "14px",
+            borderRadius: "3px",
+            display: "grid",
+            placeItems: "center",
+            background: visual.surface,
+            color: visual.accent,
+            fontSize: "8px",
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {visual.label}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            textAlign: "left",
+            fontFamily: '"Cascadia Code", Consolas, monospace',
+            fontSize: "12px",
+            letterSpacing: "0.01em",
+          }}
+        >
+          {filename}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={`Close ${filename}`}
+        title={`Close ${filename}`}
         style={{
-          width: "16px",
-          height: "16px",
+          width: "24px",
+          height: "100%",
           display: "grid",
           placeItems: "center",
+          border: "none",
           borderRadius: "3px",
           color: active ? "var(--ide-shell-text-soft)" : "var(--ide-shell-muted)",
           background: active ? "var(--ide-shell-accent-soft)" : "transparent",
           flexShrink: 0,
+          cursor: "pointer",
+          marginRight: "4px",
         }}
       >
         ×
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 

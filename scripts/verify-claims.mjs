@@ -28,7 +28,16 @@ async function openWorkspaceMenu(page) {
   await page.getByText("Workspaces", { exact: true }).waitFor();
 }
 
+async function readActiveWorkspaceName(page) {
+  const title = await page.getByLabel("Workspace switcher").getAttribute("title");
+  return title || "";
+}
+
 async function ensureVerificationWorkspace(page) {
+  if ((await readActiveWorkspaceName(page)) === verificationWorkspace) {
+    return;
+  }
+
   await openWorkspaceMenu(page);
 
   const workspaceButton = page.getByRole("button", {
@@ -40,12 +49,20 @@ async function ensureVerificationWorkspace(page) {
     return;
   }
 
+  if (!(await page.getByPlaceholder("workspace-name").count())) {
+    await openWorkspaceMenu(page);
+  }
+
   await page.getByPlaceholder("workspace-name").fill(verificationWorkspace);
   await page.getByRole("button", { name: "Add" }).click();
   await page.locator(`button[title="${verificationWorkspace}"]`).first().waitFor();
 }
 
 async function selectWorkspace(page, workspaceName) {
+  if ((await readActiveWorkspaceName(page)) === workspaceName) {
+    return;
+  }
+
   await openWorkspaceMenu(page);
   await page.getByRole("button", {
     name: new RegExp(`^${escapeRegExp(workspaceName)}$`),
@@ -181,6 +198,26 @@ async function verifyLandingControls(page) {
   if (nextTheme === "inverted" && (!themeButtonBackground || themeButtonBackground === "rgba(0, 0, 0, 0)" || themeButtonBackground === "transparent")) {
     throw new Error("Expected IDE theme toggle to render active state after mirrored landing theme change.");
   }
+}
+
+async function verifyLandingPreviewRuntimeDemo(page) {
+  await page.goto(landingUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("button", { name: /analysis\.wfnb/i }).waitFor({ timeout: 20000 });
+
+  await page.getByRole("button", { name: /proof\.py/i }).click();
+  await page.getByText("Python worker ready", { exact: true }).waitFor({ timeout: 20000 });
+  await page.locator(".wf-preview-run").click();
+  await page.getByText("offline-proof ok for Ada", { exact: true }).waitFor({ timeout: 20000 });
+
+  await page.getByRole("button", { name: /runtime\.js/i }).click();
+  await page.getByText("JavaScript output", { exact: true }).waitFor({ timeout: 20000 });
+  await page.locator(".wf-preview-run").click();
+  await page.getByText("js-runtime ok 12", { exact: true }).waitFor({ timeout: 20000 });
+
+  await page.getByRole("button", { name: /shared-demo\.ts/i }).click();
+  await page.getByText("TypeScript output", { exact: true }).waitFor({ timeout: 20000 });
+  await page.locator(".wf-preview-run").click();
+  await page.getByText("ts-runtime ok WasmForge 98", { exact: true }).waitFor({ timeout: 20000 });
 }
 
 async function verifyPythonExecutionProof(page) {
@@ -373,8 +410,11 @@ async function verifyDataFrameOfflineFlow(page) {
     'import pandas as pd\n\nframe = pd.DataFrame([\n{"name": "Ada", "score": 42},\n{"name": "Linus", "score": 36},\n])\ndisplay(frame)\n',
   );
 
+  await waitForEditorText(page, "display(frame)", 30000);
+  await waitForRunEnabled(page, 60000);
   await clickRun(page);
   await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 40000 });
   await page.getByRole("heading", { name: "DataFrame Preview" }).waitFor({ timeout: 40000 });
   await page.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout: 40000 });
   await page.getByRole("columnheader", { name: "name", exact: true }).waitFor({ timeout: 40000 });
@@ -388,13 +428,16 @@ async function verifyDataFrameOfflineFlow(page) {
   await page.waitForTimeout(1200);
   await page.getByText("offline-dataframe.py", { exact: true }).first().click();
   await waitForRunEnabled(page);
+  await waitForEditorText(page, "display(frame)", 30000);
   await clickRun(page);
   await page.getByText("OUTPUT", { exact: true }).click();
+  await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 40000 });
   await page.getByRole("heading", { name: "DataFrame Preview" }).waitFor({ timeout: 40000 });
   await page.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout: 40000 });
   await page.getByRole("cell", { name: "Linus", exact: true }).waitFor({ timeout: 40000 });
   await verifyPythonExecutionProof(page);
   await page.context().setOffline(false);
+  await ensureVerificationWorkspace(page);
 }
 
 async function verifyMatplotlibOfflineFlow(page) {
@@ -588,6 +631,9 @@ async function main() {
 
     await verifyLandingControls(page);
     report.landingControls = "ok";
+
+    await verifyLandingPreviewRuntimeDemo(page);
+    report.landingPreviewDemo = "ok";
 
     await verifyLandingOfflineProof(page);
     report.landingOfflineProof = "ok";

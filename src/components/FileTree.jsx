@@ -26,6 +26,11 @@ function FileTree({
   const [workspaceDraftName, setWorkspaceDraftName] = useState("");
   const [workspaceFeedback, setWorkspaceFeedback] = useState("");
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [showPersistentRowActions, setShowPersistentRowActions] = useState(() =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(pointer: coarse)").matches
+      : false,
+  );
   const createInputRef = useRef(null);
   const editInputRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -112,6 +117,27 @@ function FileTree({
       window.removeEventListener("scroll", closeMenus, true);
     };
   }, [contextMenu, workspaceMenuOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const syncPointerMode = () => {
+      setShowPersistentRowActions(mediaQuery.matches);
+    };
+
+    syncPointerMode();
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncPointerMode);
+      return () => mediaQuery.removeEventListener("change", syncPointerMode);
+    }
+
+    mediaQuery.addListener(syncPointerMode);
+    return () => mediaQuery.removeListener(syncPointerMode);
+  }, []);
 
   useEffect(() => {
     if (disabled) {
@@ -632,6 +658,7 @@ function FileTree({
               openFileMenu(file.name, bounds.right - 12, bounds.bottom + 4);
             }}
             editInputRef={editingName === file.name ? editInputRef : null}
+            showPersistentActions={showPersistentRowActions}
           />
         ))}
       </div>
@@ -704,8 +731,10 @@ function FileItem({
   onContextRequest,
   onMenuOpen,
   editInputRef,
+  showPersistentActions = false,
 }) {
   const [isHovered, setIsHovered] = useState(false);
+  const [hasActionFocus, setHasActionFocus] = useState(false);
   const meta = getFileMeta(file.name);
 
   return (
@@ -781,7 +810,9 @@ function FileItem({
         type="button"
         onClick={onMenuOpen}
         onDoubleClick={(event) => event.stopPropagation()}
-        style={fileActionButtonStyle(isHovered || isActive)}
+        onFocus={() => setHasActionFocus(true)}
+        onBlur={() => setHasActionFocus(false)}
+        style={fileActionButtonStyle(isHovered || isActive || showPersistentActions || hasActionFocus)}
         aria-label={`More actions for ${file.name}`}
         title="More actions"
       >
@@ -1121,10 +1152,11 @@ function fileActionButtonStyle(visible = false) {
     background: visible ? "var(--ide-shell-hover)" : "transparent",
     color: "var(--ide-shell-muted)",
     cursor: "pointer",
-    opacity: visible ? 1 : 0,
+    opacity: visible ? 1 : 0.34,
     transition: "opacity 120ms ease, background 120ms ease",
     flexShrink: 0,
     borderRadius: "3px",
+    outline: "none",
   };
 }
 

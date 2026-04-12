@@ -2,98 +2,205 @@ import { useEffect, useRef, useState } from "react";
 import "../landing.css";
 import { persistAppTheme, readStoredAppTheme } from "../constants/theme.js";
 
-const heroEditorLines = [
-  { line: 1, kind: "code", parts: [["kw", "import"], ["nm", " numpy "], ["kw", "as"], ["nm", " np"]] },
-  { line: 2, kind: "code", parts: [["kw", "import"], ["nm", " pandas "], ["kw", "as"], ["nm", " pd"]] },
-  { line: 3, kind: "blank", parts: [] },
-  { line: 4, kind: "comment", parts: [["cmt", "# Your CPU. Your disk. No server."]] },
-  { line: 5, kind: "code", parts: [["nm", "size "], ["kw", "="], ["fn", " int"], ["nm", "("], ["fn", "input"], ["nm", "("], ["str", '"Matrix size: "'], ["nm", "))"]] },
-  { line: 6, kind: "code", parts: [["nm", "m "], ["kw", "="], ["nm", " np.random.rand(size, size)"]] },
-  { line: 7, kind: "blank", parts: [] },
-  { line: 8, kind: "code", parts: [["fn", "print"], ["nm", "("], ["str", '"Det: "'], ["kw", ","], ["nm", " np.linalg.det(m)"], ["nm", ")"]] },
-  { line: 9, kind: "code", parts: [["fn", "print"], ["nm", "(pd.DataFrame(m).describe())"]] },
+const previewTabs = [
+  {
+    id: "notebook",
+    badge: "NB",
+    badgeTone: "lav",
+    filename: "analysis.wfnb",
+    runLabel: "Run notebook",
+    outputLabel: "Notebook output",
+    statusLabel: "Notebook kernel ready",
+    banner: "Notebook cells, plots, share links, and offline reload all from one local runtime shell.",
+    editorLines: [
+      { line: 1, parts: [["kw", "import"], ["nm", " pandas "], ["kw", "as"], ["nm", " pd"]] },
+      { line: 2, parts: [["kw", "import"], ["nm", " matplotlib.pyplot "], ["kw", "as"], ["nm", " plt"]] },
+      { line: 3, parts: [] },
+      { line: 4, parts: [["cmt", "# Notebook cell 1 -> local state"]] },
+      { line: 5, parts: [["nm", "scores "], ["kw", "="], ["nm", " pd.DataFrame("]] },
+      { line: 6, parts: [["nm", "    ["], ["str", '{"name": "Ada", "score": 42},'], ["nm", "]"]] },
+      { line: 7, parts: [] },
+      { line: 8, parts: [["fn", "display"], ["nm", "(scores)"]] },
+      { line: 9, parts: [["nm", 'scores.plot(x="name", y="score", kind="bar")']] },
+    ],
+    outputLines: [
+      { tone: "sys", text: "Booting local runtimes..." },
+      { tone: "ok", text: "✓ IDE shell + notebook kernel ready" },
+      { tone: "result", text: "display(scores) -> DataFrame rendered" },
+      { tone: "result", text: "plt.show() -> Figure ready" },
+      { tone: "sys", text: "[Share] Copied share link" },
+      { tone: "data", text: "helper-import ok 20" },
+      { tone: "time", text: "[Local runtime] 118.4ms · zero network" },
+      { tone: "result", text: "Hard refresh /ide" },
+      { tone: "ok", text: "✓ still running offline" },
+    ],
+  },
+  {
+    id: "python",
+    badge: "PY",
+    badgeTone: "mint",
+    filename: "proof.py",
+    runLabel: "Run Python",
+    outputLabel: "Python output",
+    statusLabel: "Python worker ready",
+    banner: "Python input(), helper imports, and offline proof all run on the same local worker.",
+    editorLines: [
+      { line: 1, parts: [["kw", "from"], ["nm", " offline_helper "], ["kw", "import"], ["fn", " compute_total"]] },
+      { line: 2, parts: [["nm", "name "], ["kw", "="], ["fn", " input"], ["nm", "("], ["str", '"Offline proof > type any name: "'], ["nm", ")"]] },
+      { line: 3, parts: [["nm", "values "], ["kw", "="], ["nm", " [2, 4, 6, 8]"]] },
+      { line: 4, parts: [["fn", "print"], ["nm", "(f"], ["str", '"offline-proof ok for {name}"'], ["nm", ")"]] },
+      { line: 5, parts: [["fn", "print"], ["nm", "("], ["str", '"helper-import ok"'], ["nm", ", "], ["fn", "compute_total"], ["nm", "(values))"]] },
+    ],
+    outputLines: [
+      { tone: "sys", text: "Python runtime warm" },
+      { tone: "prompt", text: "Offline proof > type any name:", trailing: "Ada" },
+      { tone: "result", text: "offline-proof ok for Ada" },
+      { tone: "data", text: "helper-import ok 20" },
+      { tone: "time", text: "[Local runtime] 101.7ms · zero network" },
+    ],
+  },
+  {
+    id: "javascript",
+    badge: "JS",
+    badgeTone: "amber",
+    filename: "runtime.js",
+    runLabel: "Run JavaScript",
+    outputLabel: "JavaScript output",
+    statusLabel: "JS worker ready",
+    banner: "Async JavaScript stays inside its own worker so the shell keeps responding.",
+    editorLines: [
+      { line: 1, parts: [["kw", "const"], ["nm", " values "], ["kw", "="], ["nm", " [2, 4, 6]"]] },
+      { line: 2, parts: [["kw", "const"], ["nm", " total "], ["kw", "="], ["nm", " values.reduce((sum, value) => sum + value, 0)"]] },
+      { line: 3, parts: [] },
+      { line: 4, parts: [["nm", "console.log"], ["nm", "("], ["str", '"js-runtime ok"'], ["nm", ", total)"]] },
+      { line: 5, parts: [["nm", "setTimeout"], ["nm", "(() => {"]] },
+      { line: 6, parts: [["nm", "  console.log"], ["nm", "("], ["str", '"async callback ok"'], ["nm", ")"]] },
+      { line: 7, parts: [["nm", "}, 80)"]] },
+    ],
+    outputLines: [
+      { tone: "sys", text: "JavaScript worker warm" },
+      { tone: "result", text: "js-runtime ok 12" },
+      { tone: "ok", text: "async callback ok" },
+      { tone: "time", text: "[Local runtime] 24.9ms · zero network" },
+    ],
+  },
+  {
+    id: "typescript",
+    badge: "TS",
+    badgeTone: "sky",
+    filename: "shared-demo.ts",
+    runLabel: "Run TypeScript",
+    outputLabel: "TypeScript output",
+    statusLabel: "TypeScript worker ready",
+    banner: "TypeScript transpiles locally, then runs without a server hop or cloud compiler.",
+    editorLines: [
+      { line: 1, parts: [["kw", "type"], ["nm", " RuntimeBadge "], ["kw", "="], ["nm", " { name: string; score: number }"]] },
+      { line: 2, parts: [["kw", "const"], ["nm", " badges: RuntimeBadge[] "], ["kw", "="], ["nm", " ["]] },
+      { line: 3, parts: [["nm", "  { name: "], ["str", '"WasmForge"'], ["nm", ", score: "], ["num", "98"], ["nm", " },"]] },
+      { line: 4, parts: [["nm", "]"]] },
+      { line: 5, parts: [["kw", "const"], ["nm", " leader "], ["kw", "="], ["nm", " badges[0]"]] },
+      { line: 6, parts: [["nm", "console.log"], ["nm", "("], ["str", '"ts-runtime ok"'], ["nm", ", leader.name, leader.score)"]] },
+    ],
+    outputLines: [
+      { tone: "sys", text: "Sucrase transpiler warm" },
+      { tone: "ok", text: "TypeScript worker ready" },
+      { tone: "result", text: "ts-runtime ok WasmForge 98" },
+      { tone: "sys", text: "[Share] Copied share link" },
+      { tone: "time", text: "[Local runtime] 31.2ms · zero network" },
+    ],
+  },
 ];
 
-const outputLines = [
-  { tone: "sys", text: "Booting local runtimes..." },
-  { tone: "ok", text: "✓ Python, JS/TS, SQLite, PostgreSQL ready" },
-  { tone: "sys", text: "$ python main.py" },
-  { tone: "prompt", text: "Matrix size: ", trailing: "3" },
-  { tone: "data", text: "Det: 0.3128" },
-  { tone: "result", text: "SELECT * FROM cache_status;" },
-  { tone: "result", text: "offline  persisted  local" },
-  { tone: "result", text: "true     true       true" },
-  { tone: "time", text: "✓ 847ms · zero network" },
+const heroSignals = [
+  {
+    label: "Notebook mode",
+    detail: "Shared Python cells with inline tables and plots",
+  },
+  {
+    label: "Offline proof",
+    detail: "Hard refresh `/ide` after Airplane Mode",
+  },
+  {
+    label: "Share links",
+    detail: "Copy the active file into a backend-free URL",
+  },
+  {
+    label: "Local execution",
+    detail: "Visible runtime timing from the current device",
+  },
 ];
 
-const featureCards = [
+const capabilityPanels = [
   {
     tone: "amber",
-    icon: "✈",
-    title: 'True Offline — Not "Kinda Offline"',
+    eyebrow: "Python Notebook",
+    title: "Cells, DataFrames, and plots in one local session",
     description:
-      "The runtime pack, shell assets, and editor dependencies cache locally on first load. Turn Wi-Fi off. The IDE keeps running.",
-    badge: "25MB pre-cached",
+      "Notebook files run on the same browser-native Python runtime as the IDE. Cells share state, `display(df)` renders inline tables, and `plt.show()` renders figures directly below the code.",
+    points: [
+      "Run cells individually or run all",
+      "Restart the Python session when you want a clean slate",
+      "Keep stdout, stderr, tables, and plots close to the code",
+    ],
+    foot: "Scoped on purpose: real Python notebooks, not a fake Jupyter skin.",
   },
   {
     tone: "mint",
-    icon: "▣",
-    title: "Thread Isolation",
+    eyebrow: "Offline Proof",
+    title: "Reload the IDE after Airplane Mode and keep working",
     description:
-      "Every runtime stays in its own Web Worker. A loop in Python, JS, or SQL execution cannot freeze the shell. The watchdog recovers it.",
-    badge: "worker.terminate()",
+      "The strongest claim is visible in the product itself. Warm the runtime once, click `Offline-ready`, prepare the demo workspace, turn Wi-Fi off, hard refresh `/ide`, and run again.",
+    points: [
+      "Service Worker caches the runtime pack after first load",
+      "OPFS keeps workspaces and notebook files on the device",
+      "Synchronous `input()` still works because only the worker blocks",
+    ],
+    foot: "This is the thing judges can verify live in under a minute.",
   },
   {
     tone: "sky",
-    icon: "⎙",
-    title: "Crash-Proof Files",
+    eyebrow: "Share + Imports",
+    title: "Share files by URL and import helpers locally",
     description:
-      "OPFS writes protect workspaces against refreshes, crashes, and tab closes. The browser is the disk.",
-  },
-  {
-    tone: "lav",
-    icon: "⌘",
-    title: "Five Languages, Zero API Calls",
-    description:
-      "Python, JavaScript, TypeScript, SQLite, and PostgreSQL all execute locally in the browser. No remote runtime involved.",
-  },
-  {
-    tone: "rose",
-    icon: "↻",
-    title: "Heartbeat Guard",
-    description:
-      "Workers pulse every second. If a worker stalls, WasmForge terminates it and restores a healthy runtime without freezing the UI.",
+      "The active file can be copied into a URL hash with no backend. Open it in a new tab and WasmForge creates a dedicated shared workspace. Python can also import sibling helper files in the same workspace.",
+    points: [
+      "Single-file sharing with no server execution layer",
+      "Dedicated `shared-*` workspaces for imported links",
+      "Hardened sibling-file imports for Python projects",
+    ],
+    foot: "This turns the IDE from a local demo into something judges can actually pass around.",
   },
 ];
 
 const stackGroups = [
   {
     tone: "amber",
-    label: "Runtime",
+    label: "Product",
     items: [
-      ["Pyodide 0.26", "CPython to Wasm"],
-      ["Sucrase", "TS transpiler"],
-      ["sql.js", "SQLite in Wasm"],
-      ["PGlite", "PostgreSQL in Wasm"],
+      ["Offline-ready", "visible proof flow inside the IDE"],
+      ["Python Notebook", "shared-session cells with inline output"],
+      ["Share links", "copy the active file into a URL"],
+      ["Local timing", "execution proof from the current device"],
     ],
   },
   {
     tone: "mint",
-    label: "Interface",
+    label: "Runtime",
     items: [
-      ["React 18", "UI layer"],
-      ["Monaco", "Editor engine"],
-      ["Xterm.js", "Terminal surface"],
+      ["Pyodide", "CPython to WebAssembly"],
+      ["matplotlib + pandas", "offline plotting and tables"],
+      ["sql.js + PGlite", "SQLite and PostgreSQL in-browser"],
+      ["Sucrase", "TypeScript to JavaScript"],
     ],
   },
   {
     tone: "sky",
-    label: "System",
+    label: "Reliability",
     items: [
-      ["OPFS", "Workspace persistence"],
-      ["SharedArrayBuffer", "stdin bridge"],
-      ["ServiceWorker", "Offline cache"],
-      ["Web Workers", "Runtime isolation"],
+      ["OPFS", "workspace persistence through reloads"],
+      ["Service Worker", "cached runtime pack after first load"],
+      ["SharedArrayBuffer", "blocking `input()` without freezing the UI"],
+      ["Worker watchdog", "infinite-loop recovery for Python"],
     ],
   },
 ];
@@ -101,11 +208,12 @@ const stackGroups = [
 const revealSelector = ".wf-rv";
 const repositoryUrl = "https://github.com/Yumekaz/WasmForge";
 const proofSteps = [
-  "Open the IDE. Write a Python script, JavaScript file, or SQL query.",
+  "Open `/ide` and warm the runtime once.",
+  "Click `⚡ Offline-ready` and prepare the demo workspace.",
   "Turn Wi-Fi off. Airplane Mode is the real test.",
-  "Run the file. The terminal or result panel still responds immediately.",
-  "Hard refresh. The shell reloads from cache instead of a server.",
-  "The same workspace is still there because files persist locally.",
+  "Hard refresh `/ide`. The shell returns from cache instead of a server.",
+  "Run Python again, answer `input()`, and keep the same local files.",
+  "Open a notebook or shared link and the local-first story still holds.",
 ];
 
 function outputDelay(index) {
@@ -118,11 +226,17 @@ function outputDelay(index) {
 export default function LandingPage({ onOpenIde }) {
   const [theme, setTheme] = useState(() => readStoredAppTheme());
   const [wifiOnline, setWifiOnline] = useState(true);
+  const [activePreviewId, setActivePreviewId] = useState(previewTabs[0].id);
+  const [previewRunKey, setPreviewRunKey] = useState(0);
   const [visibleOutputCount, setVisibleOutputCount] = useState(0);
+  const [isPreviewRunning, setIsPreviewRunning] = useState(false);
   const [themeTransition, setThemeTransition] = useState(null);
   const themeTransitionTimersRef = useRef([]);
+  const previewTimersRef = useRef([]);
 
-  const outputBannerVisible = visibleOutputCount >= outputLines.length;
+  const activePreview = previewTabs.find((tab) => tab.id === activePreviewId) ?? previewTabs[0];
+  const outputBannerVisible = visibleOutputCount >= activePreview.outputLines.length;
+
   const proofStepsVisible = !wifiOnline;
 
   useEffect(() => {
@@ -136,22 +250,8 @@ export default function LandingPage({ onOpenIde }) {
     return () => {
       themeTransitionTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       themeTransitionTimersRef.current = [];
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const timers = outputLines.map((_, index) =>
-      window.setTimeout(() => {
-        setVisibleOutputCount(index + 1);
-      }, outputDelay(index)),
-    );
-
-    return () => {
-      timers.forEach((timer) => window.clearTimeout(timer));
+      previewTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      previewTimersRef.current = [];
     };
   }, []);
 
@@ -210,6 +310,32 @@ export default function LandingPage({ onOpenIde }) {
 
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    previewTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    previewTimersRef.current = [];
+    setVisibleOutputCount(0);
+    setIsPreviewRunning(true);
+
+    const timers = activePreview.outputLines.map((_, index) =>
+      window.setTimeout(() => {
+        setVisibleOutputCount(index + 1);
+        if (index === activePreview.outputLines.length - 1) {
+          setIsPreviewRunning(false);
+        }
+      }, outputDelay(index)),
+    );
+
+    previewTimersRef.current = timers;
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [activePreview, previewRunKey]);
 
   const openIde = (event) => {
     event?.preventDefault?.();
@@ -309,22 +435,32 @@ export default function LandingPage({ onOpenIde }) {
         <div className="wf-hero__glow" aria-hidden="true" />
         <div className="wf-hero__inner">
           <h1 className="wf-hero__title">
-            <span className="wf-dim">Code anywhere.</span>
+            <span className="wf-dim">Code past</span>
             <br />
-            <span className="wf-warm">Need nothing.</span>
+            <span className="wf-warm">the internet.</span>
           </h1>
           <p className="wf-hero__sub">
-            Five languages. Zero servers. One browser tab. Everything compiles to WebAssembly,
-            runs on your CPU, and persists to local storage offline after the first load.
+            WasmForge now ships as both a local-first IDE and a scoped Python notebook:
+            shared notebook cells, inline DataFrames, inline Matplotlib, backend-free share links,
+            visible local execution proof, and a demo path that still works after a hard refresh offline.
           </p>
           <div className="wf-hero__cta">
             <a href="/ide" className="wf-btn wf-btn--hero" onClick={openIde}>
               <span>▶</span>
-              Open WasmForge
+              Open /ide
             </a>
             <a href="#proof" className="wf-btn wf-btn--hero-ghost">
-              See the proof
+              See offline proof
             </a>
+          </div>
+
+          <div className="wf-hero__signals wf-rv">
+            {heroSignals.map((signal) => (
+              <div className="wf-signal" key={signal.label}>
+                <div className="wf-signal__label">{signal.label}</div>
+                <div className="wf-signal__detail">{signal.detail}</div>
+              </div>
+            ))}
           </div>
 
           <div className="wf-terminal-preview wf-rv">
@@ -336,29 +472,39 @@ export default function LandingPage({ onOpenIde }) {
               </div>
 
               <div className="wf-preview-tabs">
-                <div className="wf-preview-tab wf-preview-tab--active">
-                  <span className="wf-preview-tab__badge">PY</span>
-                  main.py
-                </div>
-                <div className="wf-preview-tab">
-                  <span className="wf-preview-tab__badge">TS</span>
-                  worker.ts
-                </div>
-                <div className="wf-preview-tab">
-                  <span className="wf-preview-tab__badge">PG</span>
-                  query.pg
-                </div>
+                {previewTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`wf-preview-tab ${tab.id === activePreview.id ? "wf-preview-tab--active" : ""}`}
+                    onClick={() => setActivePreviewId(tab.id)}
+                    aria-pressed={tab.id === activePreview.id}
+                  >
+                    <span className={`wf-preview-tab__badge wf-preview-tab__badge--${tab.badgeTone}`}>{tab.badge}</span>
+                    <span className="wf-preview-tab__name">{tab.filename}</span>
+                  </button>
+                ))}
               </div>
 
-              <div className="wf-preview-status">
-                <span className="wf-preview-status__dot" />
-                Local runtimes ready
+              <div className="wf-preview-actions">
+                <div className="wf-preview-status">
+                  <span className="wf-preview-status__dot" />
+                  {activePreview.statusLabel}
+                </div>
+                <button
+                  type="button"
+                  className={`wf-preview-run ${isPreviewRunning ? "wf-preview-run--running" : ""}`}
+                  onClick={() => setPreviewRunKey((current) => current + 1)}
+                >
+                  <span className="wf-preview-run__icon">▶</span>
+                  {isPreviewRunning ? "Running..." : activePreview.runLabel}
+                </button>
               </div>
             </div>
 
             <div className="wf-terminal-preview__body">
               <div className="wf-terminal-preview__editor">
-                {heroEditorLines.map((line) => (
+                {activePreview.editorLines.map((line) => (
                   <div className="wf-code-line" key={line.line}>
                     <span className="wf-code-line__number">{line.line}</span>
                     <span className="wf-code-line__content">
@@ -367,12 +513,11 @@ export default function LandingPage({ onOpenIde }) {
                           {text}
                         </span>
                       ))}
-                      {line.line === 10 ? <span className="wf-code-cursor" /> : null}
                     </span>
                   </div>
                 ))}
                 <div className="wf-code-line">
-                  <span className="wf-code-line__number">10</span>
+                  <span className="wf-code-line__number">{activePreview.editorLines.length + 1}</span>
                   <span className="wf-code-line__content">
                     <span className="wf-code-cursor" />
                   </span>
@@ -382,12 +527,12 @@ export default function LandingPage({ onOpenIde }) {
               <div className="wf-terminal-preview__output">
                 <div className="wf-output-header">
                   <span className="wf-preview-status__dot" />
-                  Output
+                  {activePreview.outputLabel}
                 </div>
 
-                {outputLines.map((line, index) => (
+                {activePreview.outputLines.map((line, index) => (
                   <div
-                    key={line.text}
+                    key={`${activePreview.id}-${line.text}`}
                     className={`wf-output-line wf-output-line--${line.tone} ${visibleOutputCount > index ? "wf-output-line--visible" : ""}`}
                   >
                     {line.text}
@@ -398,7 +543,7 @@ export default function LandingPage({ onOpenIde }) {
             </div>
 
             <div className={`wf-terminal-banner ${outputBannerVisible ? "wf-terminal-banner--visible" : ""}`}>
-              ✈ Offline cache primed. Five runtimes, one browser tab.
+              {activePreview.banner}
             </div>
           </div>
         </div>
@@ -406,24 +551,26 @@ export default function LandingPage({ onOpenIde }) {
 
       <section className="wf-section wf-section--why" id="why">
         <div className="wf-section-head wf-rv">
-          <div className="wf-section-tag">Why WasmForge</div>
+          <div className="wf-section-tag">What Ships Now</div>
           <h2 className="wf-section-title">
-            Everything runs here.
+            More than an offline IDE.
             <br />
-            <span className="wf-dim">Nothing leaves.</span>
+            <span className="wf-dim">A local compute surface judges can actually test.</span>
           </h2>
         </div>
 
-        <div className="wf-bento wf-rv">
-          {featureCards.map((card, index) => (
-            <article
-              key={card.title}
-              className={`wf-bento-card ${index === 0 ? "wf-bento-card--wide" : ""}`}
-            >
-              <div className={`wf-bento-card__icon wf-bento-card__icon--${card.tone}`}>{card.icon}</div>
-              <h3>{card.title}</h3>
-              <p>{card.description}</p>
-              {card.badge ? <span className="wf-bento-card__badge">{card.badge}</span> : null}
+        <div className="wf-capability-grid wf-rv">
+          {capabilityPanels.map((panel) => (
+            <article key={panel.title} className={`wf-capability-panel wf-capability-panel--${panel.tone}`}>
+              <div className="wf-capability-panel__eyebrow">{panel.eyebrow}</div>
+              <h3>{panel.title}</h3>
+              <p>{panel.description}</p>
+              <ul className="wf-capability-list">
+                {panel.points.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+              <div className="wf-capability-foot">{panel.foot}</div>
             </article>
           ))}
         </div>
@@ -434,7 +581,8 @@ export default function LandingPage({ onOpenIde }) {
           <div className="wf-section-tag">The Proof</div>
           <h2 className="wf-section-title">90 seconds. No network.</h2>
           <p className="wf-section-copy">
-            Every claim is falsifiable. Turn Wi-Fi off and run the product.
+            This is the sequence we want judges to try themselves: offline reload, synchronous input,
+            persisted files, and a notebook/data workflow that still survives the network drop.
           </p>
         </div>
 
@@ -470,9 +618,9 @@ export default function LandingPage({ onOpenIde }) {
         <div className="wf-section-head wf-rv">
           <div className="wf-section-tag">Architecture</div>
           <h2 className="wf-section-title">
-            Built to stay responsive.
+            The risky work stays off the UI thread.
             <br />
-            <span className="wf-dim">Not just for the demo.</span>
+            <span className="wf-dim">That is why the shell survives loops, reloads, and offline runs.</span>
           </h2>
         </div>
 
@@ -489,11 +637,11 @@ export default function LandingPage({ onOpenIde }) {
 
       <section className="wf-section wf-section--stack" id="stack">
         <div className="wf-section-head wf-rv">
-          <div className="wf-section-tag">Tech Stack</div>
+          <div className="wf-section-tag">Under The Hood</div>
           <h2 className="wf-section-title">
-            Minimal surface.
+            The implementation is serious.
             <br />
-            <span className="wf-dim">Maximum depth.</span>
+            <span className="wf-dim">The landing page should finally say that clearly.</span>
           </h2>
         </div>
 
@@ -516,11 +664,14 @@ export default function LandingPage({ onOpenIde }) {
       <section className="wf-section wf-section--cta">
         <div className="wf-cta-glow" aria-hidden="true" />
         <h2 className="wf-cta-title wf-rv">
-          Turn on Airplane Mode.
+          Warm the runtime once.
           <br />
-          <span className="wf-warm">Then open the IDE.</span>
+          <span className="wf-warm">Then dare it to fail.</span>
         </h2>
-        <p className="wf-cta-copy wf-rv">Your CPU. Your disk. Your code. Always.</p>
+        <p className="wf-cta-copy wf-rv">
+          Open the IDE, copy a share link, render a plot, hard refresh offline, and watch the same
+          browser tab keep behaving like a real local dev environment.
+        </p>
         <div className="wf-cta-actions wf-rv">
           <a href="/ide" className="wf-btn wf-btn--hero" onClick={openIde}>
             <span>▶</span>

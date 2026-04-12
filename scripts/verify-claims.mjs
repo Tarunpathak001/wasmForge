@@ -13,6 +13,7 @@ const landingUrl = new URL("/", baseUrl).toString();
 const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = "playwright-claims";
 const offlineProofWorkspace = "offline-proof-demo";
+const repositoryUrl = "https://github.com/Yumekaz/WasmForge";
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -134,6 +135,54 @@ async function waitForEditorText(page, text, timeout = 20000) {
   );
 }
 
+async function verifyLandingControls(page) {
+  await page.goto(landingUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("link", { name: "Source", exact: true }).first().waitFor({ timeout: 20000 });
+
+  const sourceHref = await page.getByRole("link", { name: "Source", exact: true }).first().getAttribute("href");
+  if (sourceHref !== repositoryUrl) {
+    throw new Error(`Expected landing Source href "${repositoryUrl}", got "${sourceHref}"`);
+  }
+
+  const nextTheme = await page.evaluate(() => {
+    const current = window.localStorage.getItem("wasmforge:theme") === "inverted" ? "inverted" : "default";
+    return current === "default" ? "inverted" : "default";
+  });
+
+  await page.getByRole("button", { name: /Switch to .* theme/i }).click();
+  await page.waitForFunction(
+    (expectedTheme) => window.localStorage.getItem("wasmforge:theme") === expectedTheme,
+    nextTheme,
+    { timeout: 20000 },
+  );
+
+  await page.getByRole("link", { name: "See offline proof" }).click();
+  await page.waitForFunction(() => window.location.hash === "#proof", undefined, { timeout: 20000 });
+  await page.getByText("90 seconds. No network.", { exact: true }).waitFor({ timeout: 20000 });
+
+  await page.getByRole("link", { name: "Open /ide" }).first().click();
+  await page.waitForURL(/\/ide$/, { timeout: 60000 });
+  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await page.waitForTimeout(1200);
+
+  const ideThemeState = await page.evaluate(() => window.localStorage.getItem("wasmforge:theme"));
+  if (ideThemeState !== nextTheme) {
+    throw new Error(`Expected IDE theme "${nextTheme}" after landing toggle, got "${ideThemeState}"`);
+  }
+
+  const themeButtonBackground = await page.evaluate(() => {
+    const button = document.querySelector('button[title="Toggle theme"]');
+    if (!button) {
+      return "";
+    }
+    return window.getComputedStyle(button).backgroundColor;
+  });
+
+  if (nextTheme === "inverted" && (!themeButtonBackground || themeButtonBackground === "rgba(0, 0, 0, 0)" || themeButtonBackground === "transparent")) {
+    throw new Error("Expected IDE theme toggle to render active state after mirrored landing theme change.");
+  }
+}
+
 async function verifyPythonExecutionProof(page) {
   await page.getByText("OUTPUT", { exact: true }).click();
   await page.getByText("Python Output", { exact: true }).waitFor({ timeout: 20000 });
@@ -166,16 +215,16 @@ async function waitForFigure(page, timeout = 60000) {
 
 async function verifyLandingOfflineProof(page) {
   await page.goto(landingUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.getByRole("link", { name: "See the proof" }).click();
+  await page.getByRole("link", { name: "See offline proof" }).click();
   await page.getByText("90 seconds. No network.", { exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).waitFor({ timeout: 20000 });
 
   await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).click();
   await page.getByRole("button", { name: /^Wi-Fi: OFF$/ }).waitFor({ timeout: 20000 });
   await page.getByText("Turn Wi-Fi off. Airplane Mode is the real test.", { exact: true }).waitFor({ timeout: 20000 });
-  await page.getByText("Run the file. The terminal or result panel still responds immediately.", { exact: true }).waitFor({ timeout: 20000 });
-  await page.getByText("Hard refresh. The shell reloads from cache instead of a server.", { exact: true }).waitFor({ timeout: 20000 });
-  await page.getByText("The same workspace is still there because files persist locally.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Hard refresh `/ide`. The shell returns from cache instead of a server.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Run Python again, answer `input()`, and keep the same local files.", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByText("Open a notebook or shared link and the local-first story still holds.", { exact: true }).waitFor({ timeout: 20000 });
 
   await page.getByRole("button", { name: /^Wi-Fi: OFF$/ }).click();
   await page.getByRole("button", { name: /^Wi-Fi: ON$/ }).waitFor({ timeout: 20000 });
@@ -536,6 +585,9 @@ async function main() {
     ) {
       throw new Error("Service worker cache/runtime assets were not fully detected");
     }
+
+    await verifyLandingControls(page);
+    report.landingControls = "ok";
 
     await verifyLandingOfflineProof(page);
     report.landingOfflineProof = "ok";

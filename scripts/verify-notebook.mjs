@@ -11,6 +11,7 @@ const baseUrl = process.env.WASMFORGE_VERIFY_URL || "http://localhost:5173";
 const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = `playwright-notebook-${Date.now().toString(36)}`;
 const notebookFilename = "analysis.wfnb";
+const SHARE_PAYLOAD_VERSION = 1;
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -18,6 +19,21 @@ async function ensureArtifactsDir() {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function encodeSharePayload(filename, code) {
+  return Buffer.from(
+    JSON.stringify({
+      v: SHARE_PAYLOAD_VERSION,
+      f: filename,
+      c: code,
+    }),
+    "utf8",
+  )
+    .toString("base64")
+    .replace(/\+/gu, "-")
+    .replace(/\//gu, "_")
+    .replace(/=+$/gu, "");
 }
 
 async function openWorkspaceMenu(page) {
@@ -70,6 +86,10 @@ async function ensureServiceWorkerControl(page) {
   throw new Error("Service worker never took control of /ide");
 }
 
+async function waitForShellRunButton(page, timeout = 60000) {
+  await page.locator(".wf-run-btn").waitFor({ timeout });
+}
+
 async function openOrCreateNotebook(page) {
   const notebookRow = page.getByText(notebookFilename, { exact: true });
   if (await notebookRow.count()) {
@@ -117,6 +137,11 @@ async function runCell(page, cellNumber) {
   await cellRegion.getByRole("button", { name: "Run cell" }).click();
 }
 
+async function deleteCell(page, cellNumber) {
+  const cellRegion = page.getByRole("region", { name: `Cell ${cellNumber}` }).first();
+  await cellRegion.getByRole("button", { name: "Delete" }).click();
+}
+
 async function waitForNotebookIdle(page, timeout = 60000) {
   await page.waitForFunction(
     () => {
@@ -156,6 +181,15 @@ async function waitForCellTable(page, cellNumber, value, timeout = 20000) {
   await outputRegion.waitFor({ timeout });
   await outputRegion.getByRole("table", { name: /DataFrame/i }).waitFor({ timeout });
   await outputRegion.getByRole("cell", { name: value, exact: true }).waitFor({ timeout });
+}
+
+async function waitForCellMissing(page, cellNumber, timeout = 20000) {
+  await page.waitForFunction(
+    (label) => !Array.from(document.querySelectorAll('[role="region"]')).some((element) =>
+      element.getAttribute("aria-label") === label),
+    `Cell ${cellNumber}`,
+    { timeout },
+  );
 }
 
 async function verifyNotebookFlow(page) {
@@ -200,9 +234,27 @@ async function verifyNotebookFlow(page) {
   await waitForCellFigure(page, 4);
 }
 
+async function verifyNotebookRecoveryControls(page) {
+  await addCellAfter(page, 4);
+  await setCellValue(page, 5, 'print("temporary-cell")');
+  await runCell(page, 5);
+  await waitForNotebookIdle(page);
+  await waitForCellOutputText(page, 5, "temporary-cell");
+
+  await page.getByRole("button", { name: "Restart Python session" }).click();
+  await waitForNotebookIdle(page, 90000);
+
+  await runCell(page, 2);
+  await waitForNotebookIdle(page, 90000);
+  await waitForCellOutputText(page, 2, "NameError");
+
+  await deleteCell(page, 5);
+  await waitForCellMissing(page, 5);
+}
+
 async function verifyNotebookPersistence(page) {
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await waitForShellRunButton(page, 60000);
   await page.waitForTimeout(1200);
   await page.getByText(notebookFilename, { exact: true }).first().click();
   await waitForNotebookReady(page);
@@ -218,7 +270,7 @@ async function verifyNotebookPersistence(page) {
 async function verifyNotebookOffline(page) {
   await page.context().setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await waitForShellRunButton(page, 60000);
   await page.waitForTimeout(1200);
   await page.getByText(notebookFilename, { exact: true }).first().click();
   await waitForNotebookReady(page);
@@ -229,6 +281,21 @@ async function verifyNotebookOffline(page) {
   await waitForCellTable(page, 3, "Ada", 60000);
   await waitForCellFigure(page, 4, 60000);
   await page.context().setOffline(false);
+}
+
+async function verifyNotebookRepair(page) {
+  const brokenNotebookUrl = `${ideUrl}#share=${encodeSharePayload("broken.wfnb", "{ invalid notebook")}`;
+  await page.goto(brokenNotebookUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await waitForShellRunButton(page, 60000);
+  await page.waitForTimeout(1500);
+  await page.getByRole("button", { name: "Repair notebook" }).waitFor({ timeout: 60000 });
+  await page.getByRole("button", { name: "Repair notebook" }).click();
+  await waitForNotebookReady(page);
+  await waitForNotebookIdle(page, 90000);
+  await page.getByRole("button", { name: "Run all cells" }).click();
+  await waitForNotebookIdle(page, 90000);
+  await waitForCellTable(page, 2, "Ada", 60000);
+  await waitForCellFigure(page, 3, 60000);
 }
 
 async function main() {
@@ -256,14 +323,16 @@ async function main() {
 
   try {
     await page.goto(ideUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+    await waitForShellRunButton(page, 60000);
     await page.waitForTimeout(1500);
     await ensureVerificationWorkspace(page);
     await ensureServiceWorkerControl(page);
     await openOrCreateNotebook(page);
     await verifyNotebookFlow(page);
+    await verifyNotebookRecoveryControls(page);
     await verifyNotebookPersistence(page);
     await verifyNotebookOffline(page);
+    await verifyNotebookRepair(page);
 
     await page.screenshot({
       path: path.join(artifactsDir, "verify-notebook.png"),
@@ -278,8 +347,10 @@ async function main() {
       notebookSharedSession: "ok",
       notebookDataFrame: "ok",
       notebookMatplotlib: "ok",
+      notebookRecoveryControls: "ok",
       notebookPersistence: "ok",
       notebookOffline: "ok",
+      notebookRepair: "ok",
       consoleErrors,
     }, null, 2));
   } finally {

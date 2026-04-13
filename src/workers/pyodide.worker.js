@@ -317,6 +317,28 @@ except Exception as exc:
   `)
 }
 
+async function patchMatplotlibShow() {
+  await pyodide.runPythonAsync(`
+try:
+    import builtins
+    import matplotlib.pyplot as plt
+    from matplotlib.figure import Figure
+
+    if not hasattr(builtins, "_wasmforge_original_pyplot_show"):
+        builtins._wasmforge_original_pyplot_show = getattr(plt, "show", None)
+    if not hasattr(builtins, "_wasmforge_original_figure_show"):
+        builtins._wasmforge_original_figure_show = getattr(Figure, "show", None)
+
+    def _wasmforge_capture_only_show(*args, **kwargs):
+        return None
+
+    plt.show = _wasmforge_capture_only_show
+    Figure.show = _wasmforge_capture_only_show
+except Exception as exc:
+    postStderr(f"[WasmForge] Failed to patch Matplotlib show(): {exc}\\n")
+  `)
+}
+
 async function resetMatplotlibState() {
   await pyodide.runPythonAsync(`
 try:
@@ -675,6 +697,7 @@ async function runPython(code, filename = 'main.py') {
 
     if (usesMatplotlib) {
       await configureMatplotlibBackend()
+      await patchMatplotlibShow()
       await resetMatplotlibState()
     }
 
@@ -785,6 +808,7 @@ async function runNotebookCell({
 
     if (usesMatplotlib) {
       await configureMatplotlibBackend()
+      await patchMatplotlibShow()
     }
 
     await pyodide.runPythonAsync(`

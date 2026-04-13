@@ -770,6 +770,7 @@ export default function App({ onNavigateHome }) {
   const [sidebarMode, setSidebarMode] = useState("explorer");
   const [fileSearchQuery, setFileSearchQuery] = useState("");
   const [bottomPanelMode, setBottomPanelMode] = useState("terminal");
+  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(true);
   const [shareStatus, setShareStatus] = useState({ tone: "idle", label: "Share" });
   const [offlineProofVisible, setOfflineProofVisible] = useState(false);
   const [offlineProofState, setOfflineProofState] = useState(createInitialOfflineProofState);
@@ -2820,6 +2821,28 @@ export default function App({ onNavigateHome }) {
   ]), [offlineProofState.checks]);
   const bottomPanelRuntimeLabel =
     bottomPanelMode === "output" && offlineProofVisible ? "Offline Proof" : currentLanguageLabel;
+  const closeBottomPanel = useCallback(() => {
+    setIsBottomPanelVisible(false);
+  }, []);
+  const openTerminalPanel = useCallback(() => {
+    setIsBottomPanelVisible(true);
+    setBottomPanelMode("terminal");
+    if (isMobileLayout) {
+      setMobilePane("output");
+    }
+
+    if (typeof window === "undefined") {
+      terminalRef.current?.focus?.();
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      requestTerminalResize();
+      window.requestAnimationFrame(() => {
+        terminalRef.current?.focus?.();
+      });
+    });
+  }, [isMobileLayout, requestTerminalResize]);
 
   useEffect(() => {
     if (!isActiveNotebook) {
@@ -2859,6 +2882,51 @@ export default function App({ onNavigateHome }) {
   }, [bottomPanelMode, isMobileLayout, mobilePane, requestTerminalResize]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.code !== "Backquote") {
+        return;
+      }
+
+      event.preventDefault();
+      openTerminalPanel();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openTerminalPanel]);
+
+  useEffect(() => {
+    if (isMobileLayout || isBottomPanelVisible) {
+      return;
+    }
+
+    const shouldReveal =
+      offlineProofVisible ||
+      (bottomPanelMode === "output" && (showSqlResultsPanel || showPythonOutputPanel || isActiveNotebook)) ||
+      (bottomPanelMode === "terminal" && (activeRuntimeRunning || isAwaitingInput));
+
+    if (shouldReveal) {
+      setIsBottomPanelVisible(true);
+    }
+  }, [
+    activeRuntimeRunning,
+    bottomPanelMode,
+    isActiveNotebook,
+    isAwaitingInput,
+    isBottomPanelVisible,
+    isMobileLayout,
+    offlineProofVisible,
+    showPythonOutputPanel,
+    showSqlResultsPanel,
+  ]);
+
+  useEffect(() => {
     if (!isMobileLayout || mobilePane !== "editor") {
       return;
     }
@@ -2885,7 +2953,7 @@ export default function App({ onNavigateHome }) {
     return () => {
       cancelAnimationFrame(frameId);
     };
-  }, [isMobileLayout, requestTerminalResize, sidebarWidth]);
+  }, [isBottomPanelVisible, isMobileLayout, requestTerminalResize, sidebarWidth]);
 
   useEffect(() => {
     if (sidebarMode !== "search" && fileSearchQuery) {
@@ -2898,7 +2966,9 @@ export default function App({ onNavigateHome }) {
   const terminalVisible = bottomPanelMode === "terminal" && (!isMobileLayout || mobilePane === "output" || mobileDockedConsoleVisible);
   const outputVisible = bottomPanelMode === "output" && (!isMobileLayout || mobilePane === "output" || mobileDockedConsoleVisible);
   const editorPaneStyle =
-    isMobileLayout || editorPaneHeight === null
+    !isMobileLayout && !isBottomPanelVisible
+      ? { flex: "1 1 0%" }
+      : isMobileLayout || editorPaneHeight === null
       ? { flex: `${DEFAULT_EDITOR_RATIO} 1 0%` }
       : { flex: `0 0 ${editorPaneHeight}px` };
   const runButtonDisabled =
@@ -3115,6 +3185,18 @@ export default function App({ onNavigateHome }) {
               >
                 Close
               </button>
+              {!isMobileLayout ? (
+                <button
+                  type="button"
+                  onClick={closeBottomPanel}
+                  aria-label="Hide bottom panel"
+                  title="Hide bottom panel"
+                  style={terminalIconButtonStyle()}
+                  className="wf-terminal-action"
+                >
+                  <CloseIcon />
+                </button>
+              ) : null}
             </>
           ) : (
             <>
@@ -3159,6 +3241,18 @@ export default function App({ onNavigateHome }) {
                   className="wf-terminal-action"
                 >
                   Kill
+                </button>
+              ) : null}
+              {!isMobileLayout ? (
+                <button
+                  type="button"
+                  onClick={closeBottomPanel}
+                  aria-label="Hide bottom panel"
+                  title="Hide bottom panel"
+                  style={terminalIconButtonStyle()}
+                  className="wf-terminal-action"
+                >
+                  <CloseIcon />
                 </button>
               ) : null}
             </>
@@ -3372,6 +3466,16 @@ export default function App({ onNavigateHome }) {
                 background: "var(--ide-shell-subtle)",
               }}
             >
+              <button
+                type="button"
+                aria-label="Show terminal"
+                title="Show terminal (Ctrl+`)"
+                onClick={openTerminalPanel}
+                style={headerIconButtonStyle(isBottomPanelVisible && bottomPanelMode === "terminal")}
+                className="wf-terminal-action"
+              >
+                <TerminalIcon />
+              </button>
               <button
                 type="button"
                 aria-label="Copy share link"
@@ -3726,7 +3830,7 @@ export default function App({ onNavigateHome }) {
               >
                 {editorPanel}
               </div>
-              <HorizontalResizeHandle onPointerDown={startResize("editor-terminal")} />
+              {isBottomPanelVisible ? <HorizontalResizeHandle onPointerDown={startResize("editor-terminal")} /> : null}
               <div
                 style={{
                   flex: 1,
@@ -3736,6 +3840,7 @@ export default function App({ onNavigateHome }) {
                   overflow: "hidden",
                   border: "1px solid var(--ide-shell-border)",
                   boxShadow: "none",
+                  display: isBottomPanelVisible ? "block" : "none",
                 }}
               >
                 {outputPanel}
@@ -4322,6 +4427,15 @@ function ShareIcon() {
   );
 }
 
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="m4.25 4.25 7.5 7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="m11.75 4.25-7.5 7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function MenuIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -4459,6 +4573,21 @@ function terminalActionButtonStyle({
   };
 }
 
+function terminalIconButtonStyle() {
+  return {
+    width: "28px",
+    height: "28px",
+    display: "grid",
+    placeItems: "center",
+    border: "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 30%, transparent)",
+    background: "var(--ide-shell-panel)",
+    color: "var(--ide-shell-muted)",
+    cursor: "pointer",
+    padding: 0,
+    borderRadius: "3px",
+  };
+}
+
 function runButtonStyle(disabled = false) {
   return {
     height: "28px",
@@ -4474,6 +4603,26 @@ function runButtonStyle(disabled = false) {
     letterSpacing: "0.05em",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.82 : 1,
+  };
+}
+
+function headerIconButtonStyle(active = false) {
+  return {
+    width: "28px",
+    height: "28px",
+    display: "grid",
+    placeItems: "center",
+    border: active
+      ? "1px solid color-mix(in srgb, var(--ide-shell-accent) 30%, transparent)"
+      : "1px solid color-mix(in srgb, var(--ide-shell-border-strong) 46%, transparent)",
+    borderRadius: "3px",
+    background: active
+      ? "color-mix(in srgb, var(--ide-shell-accent) 12%, var(--ide-shell-panel))"
+      : "var(--ide-shell-panel)",
+    color: active ? "var(--ide-shell-accent)" : "var(--ide-shell-text)",
+    cursor: "pointer",
+    padding: 0,
+    flexShrink: 0,
   };
 }
 

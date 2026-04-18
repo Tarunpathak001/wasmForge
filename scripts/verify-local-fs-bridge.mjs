@@ -82,6 +82,12 @@ async function openAirlockPanel(page) {
   await page.getByText("Airlock Sync", { exact: true }).first().waitFor({ timeout: 20000 });
 }
 
+async function approveLocalFolderSecurityPrompt(page) {
+  await page.getByRole("dialog", { name: "Local Folder Security Check" }).waitFor({ timeout: 20000 });
+  await page.getByLabel(/I understand that while Sync is ON/).check();
+  await page.getByRole("button", { name: "Continue to browser permission" }).click();
+}
+
 async function focusEditor(page) {
   await page.locator(".monaco-editor").first().click({ position: { x: 180, y: 24 } });
 }
@@ -582,6 +588,7 @@ async function main() {
 
     await verifyDefaultSandbox(page);
     await page.getByRole("button", { name: "Link local folder" }).first().click();
+    await approveLocalFolderSecurityPrompt(page);
     await page.getByText(`Airlock sync on: ${grantedFolderName}`, { exact: false }).first().waitFor({ timeout: 20000 });
     await verifyExplorerBridge(page);
     await verifyPythonBridge(page);

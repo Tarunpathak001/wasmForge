@@ -1379,6 +1379,10 @@ export default function App({ onNavigateHome }) {
     message: "",
   });
   const [airlockBusy, setAirlockBusy] = useState(false);
+  const [localFolderSecurityPromptOpen, setLocalFolderSecurityPromptOpen] = useState(false);
+  const [localFolderSecurityAccepted, setLocalFolderSecurityAccepted] = useState(false);
+  const [hostBridgeSecurityPromptOpen, setHostBridgeSecurityPromptOpen] = useState(false);
+  const [hostBridgeSecurityPhrase, setHostBridgeSecurityPhrase] = useState("");
 
   const [shareHashSignal, setShareHashSignal] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(
@@ -3599,7 +3603,7 @@ export default function App({ onNavigateHome }) {
     saveAirlockSnapshot,
   ]);
 
-  const handleConnectLocalFolder = useCallback(async () => {
+  const handleConnectLocalFolder = useCallback(async ({ confirmed = false } = {}) => {
     if (isRunning || isJsRunning || isSqlRunning || isHostBridgeRunning) {
       terminalRef.current?.writeln(
         "\x1b[33m[Airlock] Finish or stop the active session before linking a folder.\x1b[0m",
@@ -3611,6 +3615,12 @@ export default function App({ onNavigateHome }) {
       terminalRef.current?.writeln(
         "\x1b[31m[Airlock] This browser does not support the File System Access API. Use Chromium/Edge on localhost or HTTPS.\x1b[0m",
       );
+      return;
+    }
+
+    if (!confirmed) {
+      setLocalFolderSecurityAccepted(false);
+      setLocalFolderSecurityPromptOpen(true);
       return;
     }
 
@@ -3717,6 +3727,25 @@ export default function App({ onNavigateHome }) {
     saveAirlockSnapshot,
   ]);
 
+  const handleCancelLocalFolderSecurityPrompt = useCallback(() => {
+    setLocalFolderSecurityPromptOpen(false);
+    setLocalFolderSecurityAccepted(false);
+    terminalRef.current?.writeln("\x1b[90m[Airlock] Folder link cancelled. Browser sandbox remains active.\x1b[0m");
+  }, []);
+
+  const handleConfirmLocalFolderSecurityPrompt = useCallback(async () => {
+    if (!localFolderSecurityAccepted) {
+      return;
+    }
+
+    setLocalFolderSecurityPromptOpen(false);
+    setLocalFolderSecurityAccepted(false);
+    await handleConnectLocalFolder({ confirmed: true });
+  }, [
+    handleConnectLocalFolder,
+    localFolderSecurityAccepted,
+  ]);
+
 
   const handleDisconnectLocalFolder = useCallback(async () => {
     if (isRunning || isJsRunning || isSqlRunning || isHostBridgeRunning) {
@@ -3781,7 +3810,7 @@ export default function App({ onNavigateHome }) {
     void handleConnectLocalFolder();
   }, [airlockReconciliation, airlockSnapshots.length, handleConnectLocalFolder, openAirlockPanel]);
 
-  const handleToggleHostBridge = useCallback(async () => {
+  const connectHostBridgeWithConsent = useCallback(async () => {
     if (isRunning || isJsRunning || isSqlRunning || isHostBridgeRunning) {
       terminalRef.current?.writeln(
         "\x1b[33m[Host bridge] Finish or stop the active session before changing host bridge state.\x1b[0m",
@@ -3791,13 +3820,6 @@ export default function App({ onNavigateHome }) {
     }
 
     try {
-
-      if (hostBridgeConnected) {
-        disconnectHostBridge();
-        terminalRef.current?.writeln("\x1b[90m[Host bridge] Disconnected. Browser runtimes remain available.\x1b[0m");
-        return;
-      }
-
       const capabilities = await connectHostBridge();
       const languageList = capabilities?.runners?.map((runner) => runner.language).join(", ");
       terminalRef.current?.writeln(`\x1b[36m[Host bridge] Connected to ${bridgeUrl}\x1b[0m`);
@@ -3813,12 +3835,55 @@ export default function App({ onNavigateHome }) {
   }, [
     bridgeUrl,
     connectHostBridge,
+    isHostBridgeRunning,
+    isJsRunning,
+    isRunning,
+    isSqlRunning,
+  ]);
+
+  const handleToggleHostBridge = useCallback(async () => {
+    if (isRunning || isJsRunning || isSqlRunning || isHostBridgeRunning) {
+      terminalRef.current?.writeln(
+        "\x1b[33m[Host bridge] Finish or stop the active session before changing host bridge state.\x1b[0m",
+
+      );
+      return;
+    }
+
+    if (hostBridgeConnected) {
+      disconnectHostBridge();
+      terminalRef.current?.writeln("\x1b[90m[Host bridge] Disconnected. Browser runtimes remain available.\x1b[0m");
+      return;
+    }
+
+    setHostBridgeSecurityPhrase("");
+    setHostBridgeSecurityPromptOpen(true);
+  }, [
     disconnectHostBridge,
     hostBridgeConnected,
     isHostBridgeRunning,
     isJsRunning,
     isRunning,
     isSqlRunning,
+  ]);
+
+  const handleCancelHostBridgeSecurityPrompt = useCallback(() => {
+    setHostBridgeSecurityPromptOpen(false);
+    setHostBridgeSecurityPhrase("");
+    terminalRef.current?.writeln("\x1b[90m[Host bridge] Connection cancelled. Browser sandbox remains active.\x1b[0m");
+  }, []);
+
+  const handleConfirmHostBridgeSecurityPrompt = useCallback(async () => {
+    if (hostBridgeSecurityPhrase.trim().toUpperCase() !== "CONNECT") {
+      return;
+    }
+
+    setHostBridgeSecurityPromptOpen(false);
+    setHostBridgeSecurityPhrase("");
+    await connectHostBridgeWithConsent();
+  }, [
+    connectHostBridgeWithConsent,
+    hostBridgeSecurityPhrase,
   ]);
 
 
@@ -5822,6 +5887,370 @@ export default function App({ onNavigateHome }) {
           </div>
         </div>
       ) : null}
+
+      <LocalFolderSecurityPrompt
+        open={localFolderSecurityPromptOpen}
+        accepted={localFolderSecurityAccepted}
+        onAcceptedChange={setLocalFolderSecurityAccepted}
+        onCancel={handleCancelLocalFolderSecurityPrompt}
+        onConfirm={handleConfirmLocalFolderSecurityPrompt}
+      />
+
+      <HostBridgeSecurityPrompt
+        open={hostBridgeSecurityPromptOpen}
+        bridgeUrl={bridgeUrl}
+        confirmationValue={hostBridgeSecurityPhrase}
+        onConfirmationChange={setHostBridgeSecurityPhrase}
+        onCancel={handleCancelHostBridgeSecurityPrompt}
+        onConfirm={handleConfirmHostBridgeSecurityPrompt}
+      />
+    </div>
+  );
+}
+
+function LocalFolderSecurityPrompt({
+  open,
+  accepted,
+  onAcceptedChange,
+  onCancel,
+  onConfirm,
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 78,
+        display: "grid",
+        placeItems: "center",
+        padding: "24px",
+        background: "color-mix(in srgb, var(--ide-shell-bg) 72%, transparent)",
+        backdropFilter: "blur(14px)",
+      }}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="local-folder-security-title"
+        aria-describedby="local-folder-security-body"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (accepted) {
+            onConfirm?.();
+          }
+        }}
+        style={{
+          width: "min(590px, 100%)",
+          border: "1px solid color-mix(in srgb, var(--ide-shell-accent) 34%, var(--ide-shell-border))",
+          borderRadius: "18px",
+          background: "linear-gradient(145deg, var(--ide-shell-panel), var(--ide-shell-elevated))",
+          color: "var(--ide-shell-text)",
+          boxShadow: "0 28px 80px color-mix(in srgb, #000 48%, transparent), inset 0 1px 0 rgba(255,255,255,0.05)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 20px",
+            borderBottom: "1px solid var(--ide-shell-border)",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: "36px",
+              height: "36px",
+              borderRadius: "12px",
+              display: "grid",
+              placeItems: "center",
+              background: "color-mix(in srgb, var(--ide-shell-accent) 15%, transparent)",
+              color: "var(--ide-shell-accent)",
+              fontFamily: '"Cascadia Code", Consolas, monospace',
+              fontWeight: 900,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            FS
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div
+              id="local-folder-security-title"
+              style={{
+                fontSize: "16px",
+                fontWeight: 800,
+                letterSpacing: "0.02em",
+              }}
+            >
+              Local Folder Security Check
+            </div>
+            <div style={{ color: "var(--ide-shell-muted)", fontSize: "12px", marginTop: "3px" }}>
+              The browser will ask for the final folder permission next.
+            </div>
+          </div>
+        </div>
+
+        <div id="local-folder-security-body" style={{ padding: "20px", display: "grid", gap: "14px" }}>
+          <p style={{ margin: 0, color: "var(--ide-shell-text-soft)", lineHeight: 1.55, fontSize: "13px" }}>
+            WasmForge can read and write only inside the folder you choose and only after Chrome or Edge grants access.
+            It does not scan your whole OS or touch folders you did not select.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: "10px",
+            }}
+          >
+            {[
+              ["Selected folder only", "Access is scoped to the directory you pick in the browser dialog."],
+              ["Sync ON writes to disk", "Edits in WasmForge appear in the real folder and VS Code."],
+              ["Sync OFF is detached", "Changes stay in the local shadow workspace until you reattach."],
+              ["Disconnect anytime", "Removing the live handle returns WasmForge to sandbox mode."],
+            ].map(([title, body]) => (
+              <div
+                key={title}
+                style={{
+                  border: "1px solid var(--ide-shell-border)",
+                  borderRadius: "12px",
+                  padding: "11px",
+                  background: "color-mix(in srgb, var(--ide-shell-bg) 40%, transparent)",
+                }}
+              >
+                <div style={{ color: "var(--ide-shell-text)", fontSize: "12px", fontWeight: 800, marginBottom: "5px" }}>
+                  {title}
+                </div>
+                <div style={{ color: "var(--ide-shell-muted)", fontSize: "11px", lineHeight: 1.45 }}>
+                  {body}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "10px",
+              padding: "12px",
+              borderRadius: "12px",
+              border: "1px solid color-mix(in srgb, var(--ide-shell-accent) 28%, transparent)",
+              background: "color-mix(in srgb, var(--ide-shell-accent) 8%, transparent)",
+              color: "var(--ide-shell-text-soft)",
+              fontSize: "12px",
+              lineHeight: 1.45,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(event) => onAcceptedChange?.(event.target.checked)}
+              style={{ marginTop: "2px", accentColor: "var(--ide-shell-accent)" }}
+            />
+            <span>
+              I understand that while Sync is ON, WasmForge can edit files inside the selected folder.
+            </span>
+          </label>
+        </div>
+
+        <div
+          style={{
+            padding: "14px 20px",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "10px",
+            borderTop: "1px solid var(--ide-shell-border)",
+            background: "color-mix(in srgb, var(--ide-shell-bg) 34%, transparent)",
+          }}
+        >
+          <button type="button" onClick={onCancel} style={dialogSecondaryButtonStyle()}>
+            Stay sandboxed
+          </button>
+          <button
+            type="submit"
+            disabled={!accepted}
+            style={dialogPrimaryButtonStyle({ disabled: !accepted })}
+          >
+            Continue to browser permission
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function HostBridgeSecurityPrompt({
+  open,
+  bridgeUrl,
+  confirmationValue,
+  onConfirmationChange,
+  onCancel,
+  onConfirm,
+}) {
+  if (!open) {
+    return null;
+  }
+
+  const canConfirm = confirmationValue.trim().toUpperCase() === "CONNECT";
+
+  return (
+    <div
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 80,
+        display: "grid",
+        placeItems: "center",
+        padding: "24px",
+        background: "color-mix(in srgb, var(--ide-shell-bg) 78%, transparent)",
+        backdropFilter: "blur(14px)",
+      }}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="host-bridge-security-title"
+        aria-describedby="host-bridge-security-body"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canConfirm) {
+            onConfirm?.();
+          }
+        }}
+        style={{
+          width: "min(560px, 100%)",
+          border: "1px solid color-mix(in srgb, var(--ide-shell-danger) 42%, var(--ide-shell-border))",
+          borderRadius: "18px",
+          background: "linear-gradient(145deg, var(--ide-shell-panel), var(--ide-shell-elevated))",
+          color: "var(--ide-shell-text)",
+          boxShadow: "0 28px 80px color-mix(in srgb, #000 52%, transparent), inset 0 1px 0 rgba(255,255,255,0.05)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 20px",
+            borderBottom: "1px solid var(--ide-shell-border)",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: "34px",
+              height: "34px",
+              borderRadius: "10px",
+              display: "grid",
+              placeItems: "center",
+              background: "color-mix(in srgb, var(--ide-shell-danger) 16%, transparent)",
+              color: "var(--ide-shell-danger)",
+              fontFamily: '"Cascadia Code", Consolas, monospace',
+              fontWeight: 800,
+            }}
+          >
+            !
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div
+              id="host-bridge-security-title"
+              style={{
+                fontSize: "16px",
+                fontWeight: 800,
+                letterSpacing: "0.02em",
+              }}
+            >
+              Host Bridge Security Check
+            </div>
+            <div style={{ color: "var(--ide-shell-muted)", fontSize: "12px", marginTop: "3px" }}>
+              Browser sandbox stays active unless you approve this local bridge.
+            </div>
+          </div>
+        </div>
+
+        <div id="host-bridge-security-body" style={{ padding: "20px", display: "grid", gap: "14px" }}>
+          <p style={{ margin: 0, color: "var(--ide-shell-text-soft)", lineHeight: 1.55, fontSize: "13px" }}>
+            Host Bridge connects WasmForge to a local server at <strong>{bridgeUrl}</strong>. It can detect
+            installed toolchains and run supported files through your operating system permissions.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "8px",
+              padding: "12px",
+              borderRadius: "12px",
+              background: "color-mix(in srgb, var(--ide-shell-danger) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--ide-shell-danger) 30%, transparent)",
+              color: "var(--ide-shell-text-soft)",
+              fontSize: "12px",
+              lineHeight: 1.45,
+            }}
+          >
+            <strong style={{ color: "var(--ide-shell-danger)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              Only continue if:
+            </strong>
+            <span>You started the bridge yourself with <code>npm run bridge</code>.</span>
+            <span>You trust the current workspace code.</span>
+            <span>You understand host execution is more powerful than browser-only WasmForge.</span>
+          </div>
+
+          <label style={{ display: "grid", gap: "8px", color: "var(--ide-shell-muted)", fontSize: "12px" }}>
+            Type <strong style={{ color: "var(--ide-shell-text)" }}>CONNECT</strong> to allow local toolchain detection.
+            <input
+              autoFocus
+              value={confirmationValue}
+              onChange={(event) => onConfirmationChange?.(event.target.value)}
+              placeholder="CONNECT"
+              style={{
+                height: "38px",
+                border: "1px solid var(--ide-shell-border-strong)",
+                borderRadius: "10px",
+                padding: "0 12px",
+                background: "var(--ide-shell-bg)",
+                color: "var(--ide-shell-text)",
+                outline: "none",
+                fontFamily: '"Cascadia Code", Consolas, monospace',
+                fontSize: "13px",
+                letterSpacing: "0.08em",
+              }}
+            />
+          </label>
+        </div>
+
+        <div
+          style={{
+            padding: "14px 20px",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "10px",
+            borderTop: "1px solid var(--ide-shell-border)",
+            background: "color-mix(in srgb, var(--ide-shell-bg) 34%, transparent)",
+          }}
+        >
+          <button type="button" onClick={onCancel} style={dialogSecondaryButtonStyle()}>
+            Keep sandboxed
+          </button>
+          <button
+            type="submit"
+            disabled={!canConfirm}
+            style={dialogDangerButtonStyle({ disabled: !canConfirm })}
+          >
+            I understand, connect
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -6782,6 +7211,61 @@ function airlockMetricStyle(tone = "idle") {
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     whiteSpace: "nowrap",
+  };
+}
+
+function dialogSecondaryButtonStyle() {
+  return {
+    height: "34px",
+    border: "1px solid var(--ide-shell-border-strong)",
+    borderRadius: "8px",
+    background: "var(--ide-shell-panel)",
+    color: "var(--ide-shell-text)",
+    padding: "0 12px",
+    fontSize: "12px",
+    fontWeight: 800,
+    letterSpacing: "0.04em",
+    cursor: "pointer",
+  };
+}
+
+function dialogPrimaryButtonStyle({ disabled = false } = {}) {
+  return {
+    height: "34px",
+    border: disabled
+      ? "1px solid var(--ide-shell-border-strong)"
+      : "1px solid color-mix(in srgb, var(--ide-shell-accent) 42%, transparent)",
+    borderRadius: "8px",
+    background: disabled
+      ? "var(--ide-shell-panel)"
+      : "color-mix(in srgb, var(--ide-shell-accent) 18%, var(--ide-shell-panel))",
+    color: disabled ? "var(--ide-shell-muted-strong)" : "var(--ide-shell-accent)",
+    padding: "0 12px",
+    fontSize: "12px",
+    fontWeight: 900,
+    letterSpacing: "0.04em",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.62 : 1,
+  };
+}
+
+function dialogDangerButtonStyle({ disabled = false } = {}) {
+  return {
+    height: "34px",
+    border: disabled
+      ? "1px solid var(--ide-shell-border-strong)"
+      : "1px solid color-mix(in srgb, var(--ide-shell-danger) 50%, transparent)",
+    borderRadius: "8px",
+    background: disabled
+      ? "var(--ide-shell-panel)"
+      : "color-mix(in srgb, var(--ide-shell-danger) 22%, var(--ide-shell-panel))",
+    color: disabled ? "var(--ide-shell-muted-strong)" : "var(--ide-shell-danger)",
+    padding: "0 12px",
+    fontSize: "12px",
+    fontWeight: 900,
+    letterSpacing: "0.04em",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.62 : 1,
   };
 }
 

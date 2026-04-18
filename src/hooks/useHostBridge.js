@@ -200,12 +200,11 @@ export function useHostBridge({
 
   useEffect(() => {
     unmountedRef.current = false;
-    void refresh({ silent: true });
 
     return () => {
       unmountedRef.current = true;
     };
-  }, [refresh]);
+  }, []);
 
   const connect = useCallback(async (url = bridgeState.url) => {
     const capabilities = await refresh({ url, silent: false });

@@ -3783,6 +3783,65 @@ export default function App({ onNavigateHome }) {
     openAirlockPanel,
   ]);
 
+  const handleExitAirlockWorkspace = useCallback(async () => {
+    const folderName =
+      localFolderBridgeRef.current.name
+      || localFolderBridgeRef.current.lastSyncedSnapshot?.linkedFolderName
+      || "Airlock";
+
+    try {
+      await prepareWorkspaceMutation("returning to the browser workspace");
+
+      const folderHandle = localFolderBridgeRef.current.handle;
+      const entriesMap =
+        folderHandle && localFolderBridgeRef.current.syncEnabled
+          ? await readLocalFolderTextEntries(folderHandle)
+          : await captureBrowserWorkspaceEntries();
+
+      await applyBrowserWorkspaceEntries(entriesMap);
+
+      const clearedBridge = {
+        handle: null,
+        name: "",
+        syncEnabled: false,
+        lastSyncedSnapshot: null,
+      };
+      localFolderBridgeRef.current = clearedBridge;
+      setLocalFolderBridge(clearedBridge);
+      setAirlockSnapshots([]);
+      setAirlockReconciliation(null);
+      setAirlockCenter({
+        open: false,
+        items: [],
+        compareFile: "",
+        message: "",
+      });
+      setOfflineProofVisible(false);
+      setSidebarMode("explorer");
+      setFileSearchQuery("");
+      setBottomPanelMode("terminal");
+
+      await refreshBrowserWorkspaceFiles(
+        chooseActiveFile(Object.keys(entriesMap), activeFileRef.current),
+        {
+          createDefaultIfEmpty: true,
+          workspaceName: activeWorkspaceRef.current,
+        },
+      );
+      terminalRef.current?.writeln(
+        `\x1b[36m[Airlock] Returned "${folderName}" to the normal browser workspace. Folder access and Airlock history are cleared for this workspace.\x1b[0m`,
+      );
+    } catch (error) {
+      terminalRef.current?.writeln(`\x1b[31m[Airlock] ${error?.message || error}\x1b[0m`);
+    }
+  }, [
+    applyBrowserWorkspaceEntries,
+    captureBrowserWorkspaceEntries,
+    prepareWorkspaceMutation,
+    readLocalFolderTextEntries,
+    refreshBrowserWorkspaceFiles,
+  ]);
+
   const handleToggleLocalFolder = useCallback(() => {
     if (!localFolderBridge.handle) {
       return;
@@ -5078,6 +5137,9 @@ export default function App({ onNavigateHome }) {
               }}
               onToggleSync={() => {
                 void handleToggleLocalFolder();
+              }}
+              onExitAirlock={() => {
+                void handleExitAirlockWorkspace();
               }}
               onSaveSnapshot={() => {
                 void handleSaveAirlockSnapshot();

@@ -484,7 +484,7 @@ console.log("ts-fs-read", value);
 async function verifyDetachAndReattach(page) {
   await openAirlockPanel(page);
   await page.getByRole("button", { name: "Turn Sync Off" }).click();
-  await page.getByText("Detached local shadow", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText("Sync OFF - detached local shadow", { exact: true }).first().waitFor({ timeout: 20000 });
 
   const snapshotCountBeforeManualSave = await page.getByRole("button", { name: "Restore" }).count();
   await page.getByRole("button", { name: "Save Snapshot" }).click();
@@ -527,10 +527,12 @@ open("sandbox-only.txt", "w", encoding="utf-8").write("sandbox")
 
   await writeGrantedFile(page, seedFilename, divergedDiskSeedSource);
   await openAirlockPanel(page);
-  await page.getByRole("button", { name: "Turn Sync On" }).click();
+  await page.getByRole("button", { name: "Reattach Sync" }).click();
   await page.getByText("Conflict Center", { exact: true }).first().waitFor({ timeout: 20000 });
 
   await page.getByRole("button", { name: "Keep Local" }).first().click();
+  await page.getByText("Resolved: keeping local shadow", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText("0 unresolved", { exact: true }).first().waitFor({ timeout: 20000 });
 
   await page.getByRole("button", { name: "Complete Reattach" }).click();
   await page.getByText("Linked real folder", { exact: true }).first().waitFor({ timeout: 20000 });

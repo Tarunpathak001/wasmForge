@@ -50,6 +50,26 @@ function statusLabel(status) {
   }
 }
 
+function resolutionLabel(entry) {
+  if (entry.resolution === "local") {
+    return "Resolved: keeping local shadow";
+  }
+  if (entry.resolution === "disk") {
+    return "Resolved: keeping disk version";
+  }
+  return statusLabel(entry.status);
+}
+
+function resolutionTone(entry) {
+  if (entry.resolution === "local") {
+    return statusTone("changed_only_locally");
+  }
+  if (entry.resolution === "disk") {
+    return statusTone("changed_only_on_disk");
+  }
+  return statusTone(entry.status);
+}
+
 function surfaceStyle() {
   return {
     border: "1px solid var(--ide-shell-border)",
@@ -147,6 +167,7 @@ export default function AirlockSyncPanel({
   onLinkFolder,
   onUnlinkFolder,
   onToggleSync,
+  onExitAirlock,
   onSaveSnapshot,
   onRestoreSnapshot,
   onResolveEntry,
@@ -158,6 +179,8 @@ export default function AirlockSyncPanel({
     [comparePath, reconciliation?.entries],
   );
   const hasReconciliation = Array.isArray(reconciliation?.entries) && reconciliation.entries.length > 0;
+  const unresolvedCount = reconciliation?.unresolvedCount || 0;
+  const conflictCount = reconciliation?.summary?.conflict || 0;
 
   return (
     <div
@@ -186,7 +209,7 @@ export default function AirlockSyncPanel({
                 {linkedFolderName || "No linked folder"}
               </div>
               <div style={{ marginTop: "6px", color: syncEnabled ? "var(--ide-shell-success)" : "var(--ide-shell-warning)", fontSize: "12px", fontWeight: 700 }}>
-                {linked ? (syncEnabled ? "Sync ON" : "Detached local shadow") : "No folder linked"}
+                {linked ? (syncEnabled ? "Sync ON" : "Sync OFF - detached local shadow") : "No folder linked"}
               </div>
               <div style={{ marginTop: "8px", color: "var(--ide-shell-muted)", fontSize: "12px", lineHeight: 1.6 }}>
                 {statusText || (linked
@@ -203,13 +226,18 @@ export default function AirlockSyncPanel({
               ) : (
                 <>
                   <button type="button" onClick={() => onToggleSync?.()} disabled={busy} style={actionButtonStyle({ tone: syncEnabled ? "warning" : "accent", disabled: busy })}>
-                    {syncEnabled ? "Turn Sync Off" : "Turn Sync On"}
+                    {syncEnabled ? "Turn Sync Off" : "Reattach Sync"}
                   </button>
                   <button type="button" onClick={() => onUnlinkFolder?.()} disabled={busy} style={actionButtonStyle({ tone: "danger", disabled: busy })}>
                     Unlink
                   </button>
                 </>
               )}
+              {(linked || lastSyncedSnapshot || snapshots.length > 0 || reconciliation) ? (
+                <button type="button" onClick={() => onExitAirlock?.()} disabled={busy} style={actionButtonStyle({ tone: "default", disabled: busy })}>
+                  Return to WebIDE
+                </button>
+              ) : null}
               <button type="button" onClick={() => onSaveSnapshot?.()} disabled={busy} style={actionButtonStyle({ tone: "default", disabled: busy })}>
                 Save Snapshot
               </button>
@@ -246,10 +274,10 @@ export default function AirlockSyncPanel({
                 Conflict Center
               </div>
               <div style={{ marginTop: "8px", color: "var(--ide-shell-text)", fontSize: "14px", fontWeight: 700 }}>
-                {reconciliation?.summary?.conflict || 0} unresolved
+                {unresolvedCount} unresolved
               </div>
               <div style={{ marginTop: "6px", color: "var(--ide-shell-muted)", fontSize: "11px" }}>
-                Three-way compare between last sync, local shadow, and disk.
+                {conflictCount} total conflict{conflictCount === 1 ? "" : "s"} from last sync, local shadow, and disk.
               </div>
             </div>
           </div>
@@ -264,7 +292,7 @@ export default function AirlockSyncPanel({
                     Conflict Center
                   </div>
                   <div style={{ marginTop: "4px", color: "var(--ide-shell-muted)", fontSize: "12px" }}>
-                    Resolve the changed files before reattaching sync.
+                    Pick the winning version, then click Complete Reattach to write it back safely.
                   </div>
                 </div>
                 <button
@@ -279,7 +307,7 @@ export default function AirlockSyncPanel({
 
               <div style={{ display: "grid", gap: "8px" }}>
                 {reconciliation.entries.map((entry) => {
-                  const tone = statusTone(entry.status);
+                  const tone = resolutionTone(entry);
                   return (
                     <div
                       key={entry.path}
@@ -298,7 +326,7 @@ export default function AirlockSyncPanel({
                             {entry.path}
                           </div>
                           <div style={{ marginTop: "4px", color: tone.color, fontSize: "11px", fontWeight: 700 }}>
-                            {statusLabel(entry.status)}
+                            {resolutionLabel(entry)}
                           </div>
                         </div>
 
@@ -314,7 +342,7 @@ export default function AirlockSyncPanel({
                                   disabled: busy,
                                 })}
                               >
-                                Keep Local
+                                {entry.resolution === "local" ? "Keeping Local" : "Keep Local"}
                               </button>
                               <button
                                 type="button"
@@ -325,7 +353,7 @@ export default function AirlockSyncPanel({
                                   disabled: busy,
                                 })}
                               >
-                                Keep Disk
+                                {entry.resolution === "disk" ? "Keeping Disk" : "Keep Disk"}
                               </button>
                             </>
                           ) : null}

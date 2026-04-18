@@ -107,7 +107,11 @@ const LOCAL_FOLDER_TEXT_EXTENSIONS = new Set([
   "xml",
   "yaml",
   "yml",
+  "env",
+  "gitignore",
 ]);
+const LOCAL_FOLDER_ENTRY_KIND_DIRECTORY = "directory";
+const LOCAL_FOLDER_ENTRY_KIND_FILE = "file";
 const Editor = lazy(() => import("./components/Editor.jsx"));
 
 const IDE_THEME_PALETTES = {
@@ -262,8 +266,18 @@ function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
-function createFileRecord(name, content = "") {
-  return { name, content, language: getLanguage(name) };
+function createFileRecord(entry, content = "") {
+  const normalizedEntry = typeof entry === "string" ? { name: entry } : entry || {};
+  const name = normalizedEntry.name || "";
+  const kind = normalizedEntry.kind || LOCAL_FOLDER_ENTRY_KIND_FILE;
+
+  return {
+    name,
+    content,
+    language: getLanguage(name),
+    kind,
+    supported: normalizedEntry.supported ?? kind === LOCAL_FOLDER_ENTRY_KIND_FILE,
+  };
 }
 
 function normalizeWorkspaceFilename(name) {
@@ -277,43 +291,121 @@ function normalizeWorkspaceFilename(name) {
   return normalized;
 }
 
-function isLocalFolderTextFileName(name) {
-  const normalized = String(name ?? "").trim();
-  if (!normalized || normalized.startsWith(".") || normalized.includes("/") || normalized.includes("\\")) {
-    return false;
+function normalizeLocalFolderPath(name) {
+  const normalized = String(name ?? "")
+    .replace(/^\/?workspace\//u, "")
+    .replace(/\\/gu, "/")
+    .trim()
+    .replace(/^\/+|\/+$/gu, "");
+
+  if (!normalized) {
+    throw new Error("File path is required.");
   }
 
-  const extension = normalized.includes(".")
-    ? normalized.split(".").pop()?.toLowerCase() || ""
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    throw new Error("Local folder paths cannot escape the selected folder.");
+  }
+
+  return parts.join("/");
+}
+
+function getLocalFolderBasename(path) {
+  const normalized = String(path ?? "").replace(/\\/gu, "/");
+  return normalized.split("/").filter(Boolean).pop() || normalized;
+}
+
+function isLocalFolderTextFileName(name) {
+  const normalized = normalizeLocalFolderPath(name);
+  const basename = getLocalFolderBasename(normalized);
+  const extension = basename.includes(".")
+    ? basename.split(".").pop()?.toLowerCase() || ""
     : "";
   return LOCAL_FOLDER_TEXT_EXTENSIONS.has(extension);
 }
 
-async function listLocalFolderTextFiles(directoryHandle) {
+function sortLocalFolderEntries(entries) {
+  return [...entries].sort((left, right) => {
+    const leftDepth = left.name.split("/").length;
+    const rightDepth = right.name.split("/").length;
+    const leftParent = left.name.split("/").slice(0, -1).join("/");
+    const rightParent = right.name.split("/").slice(0, -1).join("/");
+
+    if (leftParent !== rightParent) {
+      return leftParent.localeCompare(rightParent);
+    }
+    if (leftDepth !== rightDepth) {
+      return leftDepth - rightDepth;
+    }
+    if (left.kind !== right.kind) {
+      return left.kind === LOCAL_FOLDER_ENTRY_KIND_DIRECTORY ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+async function listLocalFolderEntries(directoryHandle, basePath = "") {
   if (!directoryHandle) {
     return [];
   }
 
-  const filenames = [];
+  const entries = [];
   for await (const [name, handle] of directoryHandle.entries()) {
-    if (handle.kind === "file" && isLocalFolderTextFileName(name)) {
-      filenames.push(name);
+    const relativePath = basePath ? `${basePath}/${name}` : name;
+
+    if (handle.kind === "directory") {
+      entries.push({
+        name: relativePath,
+        kind: LOCAL_FOLDER_ENTRY_KIND_DIRECTORY,
+        supported: false,
+      });
+      entries.push(...await listLocalFolderEntries(handle, relativePath));
+      continue;
+    }
+
+    if (handle.kind === "file") {
+      entries.push({
+        name: relativePath,
+        kind: LOCAL_FOLDER_ENTRY_KIND_FILE,
+        supported: isLocalFolderTextFileName(relativePath),
+      });
     }
   }
 
-  return filenames.sort((left, right) => left.localeCompare(right));
+  return sortLocalFolderEntries(entries);
+}
+
+async function getLocalFolderParentDirectory(directoryHandle, filename, options = {}) {
+  const normalized = normalizeLocalFolderPath(filename);
+  const parts = normalized.split("/");
+  const basename = parts.pop();
+  let currentDirectory = directoryHandle;
+
+  for (const segment of parts) {
+    currentDirectory = await currentDirectory.getDirectoryHandle(segment, {
+      create: Boolean(options.create),
+    });
+  }
+
+  return { directory: currentDirectory, basename, path: normalized };
 }
 
 async function readLocalFolderTextFile(directoryHandle, filename) {
-  const normalized = normalizeWorkspaceFilename(filename);
-  const fileHandle = await directoryHandle.getFileHandle(normalized);
+  const { directory, basename } = await getLocalFolderParentDirectory(directoryHandle, filename);
+  if (!isLocalFolderTextFileName(filename)) {
+    throw new Error("This local file type is visible but not editable in WasmForge yet.");
+  }
+  const fileHandle = await directory.getFileHandle(basename);
   const file = await fileHandle.getFile();
   return file.text();
 }
 
 async function writeLocalFolderTextFile(directoryHandle, filename, content) {
-  const normalized = normalizeWorkspaceFilename(filename);
-  const fileHandle = await directoryHandle.getFileHandle(normalized, { create: true });
+  const { directory, basename, path } = await getLocalFolderParentDirectory(directoryHandle, filename, { create: true });
+  if (!isLocalFolderTextFileName(path)) {
+    throw new Error("Local folder Explorer supports text and code files only.");
+  }
+  const fileHandle = await directory.getFileHandle(basename, { create: true });
   const writable = await fileHandle.createWritable();
 
   try {
@@ -322,17 +414,17 @@ async function writeLocalFolderTextFile(directoryHandle, filename, content) {
     await writable.close();
   }
 
-  return normalized;
+  return path;
 }
 
 async function deleteLocalFolderTextFile(directoryHandle, filename) {
-  const normalized = normalizeWorkspaceFilename(filename);
-  await directoryHandle.removeEntry(normalized);
+  const { directory, basename } = await getLocalFolderParentDirectory(directoryHandle, filename);
+  await directory.removeEntry(basename);
 }
 
 async function renameLocalFolderTextFile(directoryHandle, currentName, nextName) {
-  const normalizedCurrentName = normalizeWorkspaceFilename(currentName);
-  const normalizedNextName = normalizeWorkspaceFilename(nextName);
+  const normalizedCurrentName = normalizeLocalFolderPath(currentName);
+  const normalizedNextName = normalizeLocalFolderPath(nextName);
   const content = await readLocalFolderTextFile(directoryHandle, normalizedCurrentName);
   await writeLocalFolderTextFile(directoryHandle, normalizedNextName, content);
   await deleteLocalFolderTextFile(directoryHandle, normalizedCurrentName);
@@ -556,6 +648,16 @@ function chooseActiveFile(filenames, preferredFile) {
 
 function sortFileRecords(files) {
   return [...files].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function isSelectableFileRecord(file) {
+  return file?.kind !== LOCAL_FOLDER_ENTRY_KIND_DIRECTORY && file?.supported !== false;
+}
+
+function getSelectableFileNames(files) {
+  return files
+    .filter(isSelectableFileRecord)
+    .map((file) => file.name);
 }
 
 function createEmptySqlExecution() {
@@ -951,7 +1053,7 @@ export default function App({ onNavigateHome }) {
   }, [activeFile]);
 
   useEffect(() => {
-    const availableFileNames = files.map((file) => file.name);
+    const availableFileNames = getSelectableFileNames(files);
     setOpenFiles((prev) => {
       const next = prev.filter((filename) => availableFileNames.includes(filename));
       const isClosingActiveTab = Boolean(closingTabRef.current) && activeFile === closingTabRef.current;
@@ -1286,11 +1388,14 @@ export default function App({ onNavigateHome }) {
     });
   }, []);
 
-  const replaceFileList = useCallback((filenames) => {
+  const replaceFileList = useCallback((entries) => {
     setFiles((prev) => {
       const previousFiles = new Map(prev.map((file) => [file.name, file]));
-      return filenames
-        .map((filename) => createFileRecord(filename, previousFiles.get(filename)?.content ?? ""))
+      return entries
+        .map((entry) => {
+          const name = typeof entry === "string" ? entry : entry.name;
+          return createFileRecord(entry, previousFiles.get(name)?.content ?? "");
+        })
         .sort((left, right) => left.name.localeCompare(right.name));
     });
   }, []);
@@ -1438,21 +1543,22 @@ export default function App({ onNavigateHome }) {
       setIsActiveFileLoading(true);
 
       try {
-        const filenames = await listLocalFolderTextFiles(activeHandle);
+        const entries = await listLocalFolderEntries(activeHandle);
 
         if (activeHandle !== localFolderBridgeRef.current.handle) {
           return;
         }
 
-        replaceFileList(filenames);
+        replaceFileList(entries);
+        const selectableFilenames = getSelectableFileNames(entries);
 
-        if (filenames.length === 0) {
+        if (selectableFilenames.length === 0) {
           setOpenFiles([]);
           setActiveFile("");
           return;
         }
 
-        const nextActiveFile = chooseActiveFile(filenames, preferredFile);
+        const nextActiveFile = chooseActiveFile(selectableFilenames, preferredFile);
         const content = await readLocalFolderTextFile(activeHandle, nextActiveFile);
 
         if (activeHandle !== localFolderBridgeRef.current.handle) {
@@ -2771,6 +2877,17 @@ export default function App({ onNavigateHome }) {
   }, [createWorkspace, listWorkspaces, prepareWorkspaceMutation, workspaces]);
 
   const handleFileSelect = useCallback(async (name) => {
+    const selectedFile = files.find((file) => file.name === name);
+    if (selectedFile?.kind === LOCAL_FOLDER_ENTRY_KIND_DIRECTORY) {
+      return;
+    }
+    if (selectedFile?.supported === false) {
+      terminalRef.current?.writeln(
+        `\x1b[33m[Local folder] ${name} is visible, but this file type is not editable in WasmForge yet.\x1b[0m`,
+      );
+      return;
+    }
+
     if ((isRunning || isJsRunning || isSqlRunning) && name !== activeFileRef.current) {
         terminalRef.current?.writeln("\x1b[33m[WasmForge] Finish or stop the active session before switching files.\x1b[0m");
       return;
@@ -2810,7 +2927,7 @@ export default function App({ onNavigateHome }) {
         setIsActiveFileLoading(false);
       }
     }
-  }, [flushCurrentStorageWrites, isJsRunning, isRunning, isSqlRunning, readFile, syncActiveEditorDraft, upsertFileContent]);
+  }, [files, flushCurrentStorageWrites, isJsRunning, isRunning, isSqlRunning, readFile, syncActiveEditorDraft, upsertFileContent]);
 
   const persistNotebookDocument = useCallback((filename, document, options = {}) => {
     const {
@@ -2946,17 +3063,19 @@ export default function App({ onNavigateHome }) {
   }, [persistNotebookDocument]);
 
   const handleCreateFile = useCallback(async (name) => {
-    const trimmed = normalizeWorkspaceFilename(name);
+    const localFolderHandle = localFolderBridgeRef.current.handle;
+    const trimmed = localFolderHandle
+      ? normalizeLocalFolderPath(name)
+      : normalizeWorkspaceFilename(name);
     if (files.some((file) => file.name === trimmed)) {
       throw new Error("File already exists.");
     }
-    if (localFolderBridgeRef.current.handle && !isLocalFolderTextFileName(trimmed)) {
+    if (localFolderHandle && !isLocalFolderTextFileName(trimmed)) {
       throw new Error("Local folder Explorer supports text and code files only.");
     }
     const initialContent = isPythonNotebookFile(trimmed) ? createNotebookFileContent() : "";
     await prepareWorkspaceMutation("creating files");
 
-    const localFolderHandle = localFolderBridgeRef.current.handle;
     if (localFolderHandle) {
       await writeLocalFolderTextFile(localFolderHandle, trimmed, initialContent);
     } else {
@@ -2973,19 +3092,21 @@ export default function App({ onNavigateHome }) {
   }, [files, handleCreateFile]);
 
   const handleRenameFile = useCallback(async (currentName, nextName) => {
-    const trimmed = normalizeWorkspaceFilename(nextName);
+    const localFolderHandle = localFolderBridgeRef.current.handle;
+    const trimmed = localFolderHandle
+      ? normalizeLocalFolderPath(nextName)
+      : normalizeWorkspaceFilename(nextName);
     if (currentName === trimmed) {
       return;
     }
     if (files.some((file) => file.name === trimmed && file.name !== currentName)) {
       throw new Error("File already exists.");
     }
-    if (localFolderBridgeRef.current.handle && !isLocalFolderTextFileName(trimmed)) {
+    if (localFolderHandle && !isLocalFolderTextFileName(trimmed)) {
       throw new Error("Local folder Explorer supports text and code files only.");
     }
     await prepareWorkspaceMutation("renaming files");
 
-    const localFolderHandle = localFolderBridgeRef.current.handle;
     if (localFolderHandle) {
       await renameLocalFolderTextFile(localFolderHandle, currentName, trimmed);
     } else {
@@ -3047,7 +3168,7 @@ export default function App({ onNavigateHome }) {
       return next;
     });
     setOpenFiles((prev) => prev.filter((fileName) => fileName !== filename));
-    const remainingNames = files.filter((file) => file.name !== filename).map((file) => file.name);
+    const remainingNames = getSelectableFileNames(files.filter((file) => file.name !== filename));
     if (remainingNames.length === 0) {
       setFiles([]);
       setActiveFile("");
@@ -3410,6 +3531,7 @@ export default function App({ onNavigateHome }) {
       workspaceLocked={localFolderConnected}
       storageLabel={localFolderConnected ? "Selected local folder" : "Stored locally"}
       footerLabel={localFolderConnected ? "Saving to selected folder" : "Saved locally"}
+      allowNestedPaths={localFolderConnected}
       disabled={isAnyRuntimeBusy || !workspaceBootstrapped}
     />
   );

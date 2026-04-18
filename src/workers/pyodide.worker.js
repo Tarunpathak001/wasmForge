@@ -350,6 +350,20 @@ async function persistWorkspaceToOpfs() {
   }
 }
 
+function ensureVirtualParentDirectory(filePath) {
+  const parts = String(filePath || '').split('/').filter(Boolean).slice(0, -1)
+  let currentPath = ''
+
+  for (const part of parts) {
+    currentPath += `/${part}`
+    try {
+      pyodide.FS.stat(currentPath)
+    } catch {
+      pyodide.FS.mkdir(currentPath)
+    }
+  }
+}
+
 async function ensureLocalPackages(code, filename = 'main.py') {
   const requiredPackages = collectRequestedPackages(code)
 
@@ -1061,6 +1075,7 @@ async function runPython(code, filename = 'main.py') {
     await mountLocalFolder()
 
     const workspacePath = `/workspace/${filename}`
+    ensureVirtualParentDirectory(workspacePath)
     pyodide.FS.writeFile(workspacePath, code, { encoding: 'utf8' })
 
     const packageState = await ensureLocalPackages(code, filename)

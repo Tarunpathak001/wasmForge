@@ -18,6 +18,7 @@ function FileTree({
   workspaceLocked = false,
   storageLabel = "Stored locally",
   footerLabel = "Saved locally",
+  allowNestedPaths = false,
   disabled = false,
 }) {
   const [isCreating, setIsCreating] = useState(false);
@@ -29,6 +30,7 @@ function FileTree({
   const [workspaceDraftName, setWorkspaceDraftName] = useState("");
   const [workspaceFeedback, setWorkspaceFeedback] = useState("");
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState(() => new Set());
   const [showPersistentRowActions, setShowPersistentRowActions] = useState(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
       ? window.matchMedia("(pointer: coarse)").matches
@@ -42,8 +44,16 @@ function FileTree({
   const workspaceButtonRef = useRef(null);
 
   const orderedFiles = useMemo(
-    () => [...files].sort((left, right) => left.name.localeCompare(right.name)),
+    () => [...files].sort(compareFileEntries),
     [files],
+  );
+  const fileCount = useMemo(
+    () => orderedFiles.filter((file) => (file.kind || "file") === "file").length,
+    [orderedFiles],
+  );
+  const folderCount = useMemo(
+    () => orderedFiles.filter((file) => file.kind === "directory").length,
+    [orderedFiles],
   );
   const sortedWorkspaces = useMemo(
     () => [...workspaces].sort((left, right) => left.localeCompare(right)),
@@ -51,11 +61,39 @@ function FileTree({
   );
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const visibleFiles = useMemo(() => {
+    const normalizedEntries = orderedFiles.map(normalizeFileEntryForTree);
     if (mode !== "search" || !normalizedSearchQuery) {
-      return orderedFiles;
+      return allowNestedPaths
+        ? buildFileTreeRows(normalizedEntries, expandedFolders)
+        : normalizedEntries;
     }
-    return orderedFiles.filter((file) => file.name.toLowerCase().includes(normalizedSearchQuery));
-  }, [mode, normalizedSearchQuery, orderedFiles]);
+    return normalizedEntries
+      .filter((file) => file.name.toLowerCase().includes(normalizedSearchQuery))
+      .map((file) => ({
+        ...file,
+        depth: allowNestedPaths ? Math.max(0, file.name.split("/").length - 1) : 0,
+        displayName: getBasename(file.name),
+      }));
+  }, [allowNestedPaths, expandedFolders, mode, normalizedSearchQuery, orderedFiles]);
+
+  useEffect(() => {
+    if (!allowNestedPaths) {
+      setExpandedFolders(new Set());
+      return;
+    }
+
+    setExpandedFolders((previous) => {
+      let changed = false;
+      const next = new Set(previous);
+      for (const file of files) {
+        if (file.kind === "directory" && !next.has(file.name)) {
+          next.add(file.name);
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [allowNestedPaths, files]);
 
   useEffect(() => {
     if (isCreating) {
@@ -162,7 +200,7 @@ function FileTree({
   };
 
   const handleCreateFile = async () => {
-    const normalized = normalizeFileName(createName);
+    const normalized = normalizeFileName(createName, { allowNestedPaths });
     if (!normalized) {
       setIsCreating(false);
       setCreateName("");
@@ -183,7 +221,7 @@ function FileTree({
   };
 
   const handleRenameSubmit = async () => {
-    const normalized = normalizeFileName(editingValue);
+    const normalized = normalizeFileName(editingValue, { allowNestedPaths });
     if (!editingName || !normalized || normalized === editingName) {
       setEditingName(null);
       setEditingValue("");
@@ -329,8 +367,14 @@ function FileTree({
             </div>
             <div style={workspaceCardMetaStyle}>
               <span>
-                {orderedFiles.length} file{orderedFiles.length === 1 ? "" : "s"}
+                {fileCount} file{fileCount === 1 ? "" : "s"}
               </span>
+              {folderCount > 0 ? (
+                <>
+                  <span style={workspaceCardDotStyle} />
+                  <span>{folderCount} folder{folderCount === 1 ? "" : "s"}</span>
+                </>
+              ) : null}
               <span style={workspaceCardDotStyle} />
               <span>{storageLabel}</span>
             </div>
@@ -426,7 +470,7 @@ function FileTree({
           <span style={{ color: "var(--ide-shell-muted-strong)", fontSize: "9px", letterSpacing: "0.1em" }}>
             {mode === "search"
               ? `${visibleFiles.length} match${visibleFiles.length === 1 ? "" : "es"}`
-              : `${orderedFiles.length} file${orderedFiles.length === 1 ? "" : "s"}`}
+              : `${fileCount + folderCount} item${fileCount + folderCount === 1 ? "" : "s"}`}
           </span>
         </div>
 
@@ -629,7 +673,7 @@ function FileTree({
             editingValue={editingName === file.name ? editingValue : ""}
             onEditValueChange={setEditingValue}
             onRenameStart={() => {
-              if (disabled) {
+              if (disabled || file.kind === "directory" || file.supported === false) {
                 return;
               }
               setContextMenu(null);
@@ -647,15 +691,29 @@ function FileTree({
                 onFileSelect(file.name);
               }
             }}
+            onFolderToggle={() => {
+              if (disabled || file.kind !== "directory") {
+                return;
+              }
+              setExpandedFolders((previous) => {
+                const next = new Set(previous);
+                if (next.has(file.name)) {
+                  next.delete(file.name);
+                } else {
+                  next.add(file.name);
+                }
+                return next;
+              });
+            }}
             onContextRequest={(event) => {
-              if (disabled) {
+              if (disabled || file.kind === "directory" || file.supported === false) {
                 return;
               }
               event.preventDefault();
               openFileMenu(file.name, event.clientX, event.clientY);
             }}
             onMenuOpen={(event) => {
-              if (disabled) {
+              if (disabled || file.kind === "directory" || file.supported === false) {
                 return;
               }
               event.stopPropagation();
@@ -733,6 +791,7 @@ function FileItem({
   onRenameCancel,
   onRenameSubmit,
   onSelect,
+  onFolderToggle,
   onContextRequest,
   onMenuOpen,
   editInputRef,
@@ -740,13 +799,16 @@ function FileItem({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [hasActionFocus, setHasActionFocus] = useState(false);
-  const meta = getFileMeta(file.name);
+  const isDirectory = file.kind === "directory";
+  const isUnsupported = file.supported === false && !isDirectory;
+  const meta = getFileMeta(file.name, file.kind, file.supported);
+  const displayName = file.displayName || getBasename(file.name);
 
   return (
     <div
       className="wf-file-row"
-      onClick={onSelect}
-      onDoubleClick={onRenameStart}
+      onClick={isDirectory ? onFolderToggle : onSelect}
+      onDoubleClick={isDirectory ? onFolderToggle : onRenameStart}
       onContextMenu={onContextRequest}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -755,7 +817,7 @@ function FileItem({
         display: "flex",
         alignItems: "center",
         gap: "8px",
-        padding: "0 9px 0 11px",
+        padding: `0 9px 0 ${11 + (file.depth || 0) * 14}px`,
         margin: "0 8px",
         border: "1px solid",
         borderColor: isActive
@@ -764,13 +826,29 @@ function FileItem({
             ? "color-mix(in srgb, var(--ide-shell-border-strong) 24%, transparent)"
             : "transparent",
         background: isActive ? "var(--ide-shell-selection)" : isHovered ? "var(--ide-shell-hover)" : "transparent",
-        color: isActive ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
+        color: isUnsupported
+          ? "var(--ide-shell-muted)"
+          : isActive
+            ? "var(--ide-shell-text)"
+            : "var(--ide-shell-text-soft)",
         cursor: disabled ? "default" : "pointer",
         borderRadius: "4px",
         boxShadow: isActive ? "inset 2px 0 0 var(--ide-shell-accent)" : "none",
         transition: "background 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
       }}
     >
+      <span
+        aria-hidden="true"
+        style={{
+          width: "10px",
+          color: isDirectory ? "var(--ide-shell-muted)" : "transparent",
+          fontSize: "10px",
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+      >
+        {isDirectory ? (file.isExpanded ? "▾" : "▸") : "•"}
+      </span>
       <FileGlyph meta={meta} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -799,30 +877,38 @@ function FileItem({
               whiteSpace: "nowrap",
               fontFamily: '"Cascadia Code", Consolas, monospace',
               fontSize: "12px",
-              fontWeight: isActive ? 700 : 600,
+              fontWeight: isDirectory || isActive ? 700 : 600,
               lineHeight: 1,
-              color: isActive ? "var(--ide-shell-text)" : "var(--ide-shell-text-soft)",
+              color: isUnsupported
+                ? "var(--ide-shell-muted)"
+                : isActive || isDirectory
+                  ? "var(--ide-shell-text)"
+                  : "var(--ide-shell-text-soft)",
             }}
             title={file.name}
           >
-            {file.name}
+            {displayName}
           </div>
         )}
       </div>
 
-      <button
-        className="wf-file-row-action"
-        type="button"
-        onClick={onMenuOpen}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onFocus={() => setHasActionFocus(true)}
-        onBlur={() => setHasActionFocus(false)}
-        style={fileActionButtonStyle(isHovered || isActive || showPersistentActions || hasActionFocus)}
-        aria-label={`More actions for ${file.name}`}
-        title="More actions"
-      >
-        ⋯
-      </button>
+      {!isDirectory && !isUnsupported ? (
+        <button
+          className="wf-file-row-action"
+          type="button"
+          onClick={onMenuOpen}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onFocus={() => setHasActionFocus(true)}
+          onBlur={() => setHasActionFocus(false)}
+          style={fileActionButtonStyle(isHovered || isActive || showPersistentActions || hasActionFocus)}
+          aria-label={`More actions for ${file.name}`}
+          title="More actions"
+        >
+          ⋯
+        </button>
+      ) : (
+        <span style={{ width: "22px", height: "22px", flexShrink: 0 }} />
+      )}
     </div>
   );
 }
@@ -907,12 +993,26 @@ function SearchGlyph() {
   );
 }
 
-function normalizeFileName(value) {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) {
+function normalizeTreePath(value) {
+  return String(value ?? "")
+    .replace(/^\/?workspace\//u, "")
+    .replace(/\\/gu, "/")
+    .trim()
+    .replace(/^\/+|\/+$/gu, "");
+}
+
+function normalizeFileName(value, options = {}) {
+  const trimmed = normalizeTreePath(value);
+  if (!trimmed) {
     return "";
   }
-  return trimmed.replace(/^\/?workspace\//u, "");
+  if (!options.allowNestedPaths && trimmed.includes("/")) {
+    return "";
+  }
+  if (trimmed.split("/").some((part) => !part || part === "." || part === "..")) {
+    return "";
+  }
+  return trimmed;
 }
 
 function normalizeWorkspaceName(value) {
@@ -923,8 +1023,147 @@ function normalizeWorkspaceName(value) {
   return trimmed;
 }
 
-function getFileMeta(filename) {
-  const extension = filename.split(".").pop()?.toLowerCase() || "";
+function getBasename(path) {
+  return normalizeTreePath(path).split("/").filter(Boolean).pop() || path;
+}
+
+function normalizeFileEntryForTree(file) {
+  const kind = file.kind || "file";
+  return {
+    ...file,
+    kind,
+    supported: file.supported ?? kind === "file",
+    displayName: getBasename(file.name),
+    depth: 0,
+  };
+}
+
+function compareFileEntries(left, right) {
+  const leftKind = left.kind || "file";
+  const rightKind = right.kind || "file";
+  const leftParent = normalizeTreePath(left.name).split("/").slice(0, -1).join("/");
+  const rightParent = normalizeTreePath(right.name).split("/").slice(0, -1).join("/");
+
+  if (leftParent !== rightParent) {
+    return leftParent.localeCompare(rightParent);
+  }
+  if (leftKind !== rightKind) {
+    return leftKind === "directory" ? -1 : 1;
+  }
+  return getBasename(left.name).localeCompare(getBasename(right.name));
+}
+
+function buildFileTreeRows(entries, expandedFolders) {
+  const nodes = new Map();
+  const rootChildren = [];
+
+  const ensureDirectoryNode = (path) => {
+    const normalizedPath = normalizeTreePath(path);
+    if (!normalizedPath) {
+      return null;
+    }
+
+    if (nodes.has(normalizedPath)) {
+      return nodes.get(normalizedPath);
+    }
+
+    const parentPath = normalizedPath.split("/").slice(0, -1).join("/");
+    const node = {
+      entry: {
+        name: normalizedPath,
+        kind: "directory",
+        supported: false,
+      },
+      children: [],
+    };
+    nodes.set(normalizedPath, node);
+
+    const parent = parentPath ? ensureDirectoryNode(parentPath) : null;
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      rootChildren.push(node);
+    }
+
+    return node;
+  };
+
+  for (const entry of entries) {
+    const normalizedName = normalizeTreePath(entry.name);
+    if (!normalizedName) {
+      continue;
+    }
+
+    if (entry.kind === "directory") {
+      const directoryNode = ensureDirectoryNode(normalizedName);
+      directoryNode.entry = {
+        ...directoryNode.entry,
+        ...entry,
+        name: normalizedName,
+        kind: "directory",
+        supported: false,
+      };
+      continue;
+    }
+
+    const parentPath = normalizedName.split("/").slice(0, -1).join("/");
+    const parent = parentPath ? ensureDirectoryNode(parentPath) : null;
+    const fileNode = {
+      entry: {
+        ...entry,
+        name: normalizedName,
+        kind: "file",
+      },
+      children: [],
+    };
+
+    if (parent) {
+      parent.children.push(fileNode);
+    } else {
+      rootChildren.push(fileNode);
+    }
+  }
+
+  const sortChildren = (children) => {
+    children.sort((left, right) => compareFileEntries(left.entry, right.entry));
+    children.forEach((child) => sortChildren(child.children));
+  };
+  sortChildren(rootChildren);
+
+  const rows = [];
+  const flatten = (children, depth) => {
+    for (const node of children) {
+      const isDirectory = node.entry.kind === "directory";
+      const isExpanded = expandedFolders.has(node.entry.name);
+      rows.push({
+        ...node.entry,
+        depth,
+        displayName: getBasename(node.entry.name),
+        hasChildren: node.children.length > 0,
+        isExpanded,
+      });
+
+      if (isDirectory && isExpanded) {
+        flatten(node.children, depth + 1);
+      }
+    }
+  };
+
+  flatten(rootChildren, 0);
+  return rows;
+}
+
+function getFileMeta(filename, kind = "file", supported = true) {
+  if (kind === "directory") {
+    return { label: "DIR", accent: "var(--ide-file-ts-accent)", surface: "var(--ide-file-ts-surface)", kind };
+  }
+
+  if (supported === false) {
+    return { label: "BIN", accent: "var(--ide-shell-muted)", surface: "var(--ide-shell-hover)", kind };
+  }
+
+  const basename = getBasename(filename);
+  const extension = basename.split(".").pop()?.toLowerCase() || "";
 
   switch (extension) {
     case "py":

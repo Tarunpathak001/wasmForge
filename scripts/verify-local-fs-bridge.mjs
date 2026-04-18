@@ -15,6 +15,9 @@ const inputValue = `bridge-input-${Date.now()}`;
 const seedFilename = "bridge_seed.py";
 const seedSource = 'print("seed from granted folder")\n';
 const editedSeedSource = 'print("edited through Monaco into granted folder")\n';
+const nestedSeedFilename = "python/nested_demo.py";
+const nestedSeedSource = 'print("nested seed from granted folder")\n';
+const editedNestedSeedSource = 'print("edited nested file through Monaco")\n';
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -46,7 +49,7 @@ async function ensureWorkspace(page, workspaceName) {
 }
 
 async function createFile(page, filename) {
-  const maybeRow = page.getByText(filename, { exact: true });
+  const maybeRow = page.getByText(displayName(filename), { exact: true });
   if (await maybeRow.count()) {
     await maybeRow.first().click();
     return;
@@ -56,8 +59,8 @@ async function createFile(page, filename) {
   const input = page.getByPlaceholder("new-file.txt");
   await input.fill(filename);
   await input.press("Enter");
-  await page.getByText(filename, { exact: true }).first().waitFor();
-  await page.getByText(filename, { exact: true }).first().click();
+  await page.getByText(displayName(filename), { exact: true }).first().waitFor();
+  await page.getByText(displayName(filename), { exact: true }).first().click();
 }
 
 async function focusEditor(page) {
@@ -100,6 +103,10 @@ async function readGrantedFile(page, filePath) {
     },
     { folderName: grantedFolderName, filePath },
   );
+}
+
+function displayName(filePath) {
+  return String(filePath).split("/").filter(Boolean).at(-1) || filePath;
 }
 
 async function grantedFileExists(page, filePath) {
@@ -146,7 +153,26 @@ async function waitForGrantedFileText(page, filePath, expectedText) {
 
 async function installDirectoryPickerMock(page) {
   await page.addInitScript(
-    async ({ folderName, seedText, seedFilename: grantedSeedFilename, seedSource: grantedSeedSource }) => {
+    async ({
+      folderName,
+      seedText,
+      seedFilename: grantedSeedFilename,
+      seedSource: grantedSeedSource,
+      nestedSeedFilename: grantedNestedSeedFilename,
+      nestedSeedSource: grantedNestedSeedSource,
+    }) => {
+      const writeTextFile = async (directory, selectedPath, text) => {
+        const parts = selectedPath.split("/").filter(Boolean);
+        let current = directory;
+        for (const segment of parts.slice(0, -1)) {
+          current = await current.getDirectoryHandle(segment, { create: true });
+        }
+        const fileHandle = await current.getFileHandle(parts.at(-1), { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+      };
+
       window.showDirectoryPicker = async () => {
         const root = await navigator.storage.getDirectory();
         const directory = await root.getDirectoryHandle(folderName, { create: true });
@@ -155,15 +181,12 @@ async function installDirectoryPickerMock(page) {
           await directory.removeEntry(name, { recursive: handle.kind === "directory" }).catch(() => undefined);
         }
 
-        const inputHandle = await directory.getFileHandle("input.txt", { create: true });
-        const inputWritable = await inputHandle.createWritable();
-        await inputWritable.write(seedText);
-        await inputWritable.close();
-
-        const seedHandle = await directory.getFileHandle(grantedSeedFilename, { create: true });
-        const seedWritable = await seedHandle.createWritable();
-        await seedWritable.write(grantedSeedSource);
-        await seedWritable.close();
+        await writeTextFile(directory, "input.txt", seedText);
+        await writeTextFile(directory, grantedSeedFilename, grantedSeedSource);
+        await writeTextFile(directory, grantedNestedSeedFilename, grantedNestedSeedSource);
+        await writeTextFile(directory, ".vscode/settings.json", '{"editor.tabSize": 2}\n');
+        await directory.getDirectoryHandle("empty-folder", { create: true });
+        await writeTextFile(directory, "important.zip", "not really a zip in this mock");
 
         return directory;
       };
@@ -173,6 +196,8 @@ async function installDirectoryPickerMock(page) {
       seedText: inputValue,
       seedFilename,
       seedSource,
+      nestedSeedFilename,
+      nestedSeedSource,
     },
   );
 }
@@ -183,13 +208,13 @@ async function renameFileFromTree(page, currentName, nextName) {
   const renameInput = page.locator("input:focus").first();
   await renameInput.fill(nextName);
   await renameInput.press("Enter");
-  await page.getByText(nextName, { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText(displayName(nextName), { exact: true }).first().waitFor({ timeout: 20000 });
 }
 
 async function deleteFileFromTree(page, filename) {
   await page.getByLabel(`More actions for ${filename}`).click({ force: true });
   await page.getByRole("button", { name: "Delete" }).click();
-  await page.getByText(filename, { exact: true }).first().waitFor({ state: "detached", timeout: 20000 });
+  await page.getByText(displayName(filename), { exact: true }).first().waitFor({ state: "detached", timeout: 20000 });
 }
 
 async function verifyDefaultSandbox(page) {
@@ -212,10 +237,33 @@ async function verifyExplorerBridge(page) {
   await page.getByText("Selected local folder", { exact: true }).waitFor({ timeout: 20000 });
   await page.getByText(seedFilename, { exact: true }).first().waitFor({ timeout: 20000 });
   await page.getByText("input.txt", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText("python", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText(".vscode", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText("empty-folder", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText("important.zip", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByText("nested_demo.py", { exact: true }).first().waitFor({ timeout: 20000 });
 
   await page.getByText(seedFilename, { exact: true }).first().click();
   await setEditorValue(page, editedSeedSource);
   await waitForGrantedFileText(page, seedFilename, "edited through Monaco");
+
+  await page.getByText("nested_demo.py", { exact: true }).first().click();
+  await setEditorValue(page, editedNestedSeedSource);
+  await waitForGrantedFileText(page, nestedSeedFilename, "edited nested file");
+
+  await createFile(page, "python/created-nested.py");
+  if (!(await grantedFileExists(page, "python/created-nested.py"))) {
+    throw new Error("Expected python/created-nested.py to be created in the granted folder.");
+  }
+
+  await renameFileFromTree(page, "python/created-nested.py", "python/renamed-nested.py");
+  if (!(await grantedFileExists(page, "python/renamed-nested.py"))) {
+    throw new Error("Expected python/renamed-nested.py to exist in the granted folder.");
+  }
+  await deleteFileFromTree(page, "python/renamed-nested.py");
+  if (await grantedFileExists(page, "python/renamed-nested.py")) {
+    throw new Error("Expected python/renamed-nested.py to be deleted from the granted folder.");
+  }
 
   await createFile(page, "created-from-explorer.py");
   if (!(await grantedFileExists(page, "created-from-explorer.py"))) {

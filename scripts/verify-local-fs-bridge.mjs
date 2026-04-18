@@ -79,14 +79,21 @@ async function clickRun(page) {
 }
 
 async function waitForTerminalText(page, text, timeout = 90000) {
-  await page.waitForFunction(
-    ({ selector, expected }) => {
-      const element = document.querySelector(selector);
-      return Boolean(element?.textContent?.includes(expected));
-    },
-    { selector: ".xterm-rows", expected: text },
-    { timeout },
-  );
+  try {
+    await page.waitForFunction(
+      ({ selector, expected }) => {
+        const element = document.querySelector(selector);
+        return Boolean(element?.textContent?.includes(expected));
+      },
+      { selector: ".xterm-rows", expected: text },
+      { timeout },
+    );
+  } catch (error) {
+    const terminalText = await page.locator(".xterm-rows").textContent().catch(() => "");
+    throw new Error(`Timed out waiting for terminal text "${text}". Terminal contained:\n${terminalText}`, {
+      cause: error,
+    });
+  }
 }
 
 async function readGrantedFile(page, filePath) {
@@ -312,6 +319,77 @@ exec('try:\\n    read_text("../escape.txt")\\nexcept ValueError as exc:\\n    pr
   }
 }
 
+async function verifyNaturalPythonLocalFolder(page) {
+  await page.getByRole("button", { name: "Clear" }).click();
+  await createFile(page, "local-fs-python-natural.py");
+  await setEditorValue(
+    page,
+    `import os
+from pathlib import Path
+
+input_text = Path("input.txt").read_text()
+print("natural-input-read", input_text)
+
+file = open("plain-open.txt", "w")
+wrote = file.write("plain-open:" + input_text)
+file.close()
+print("natural-open-write-return", wrote)
+exec('with open("context-open.txt", "w") as context_file:\\n    context_file.write("context-open")\\n')
+
+nested_file = open("python/plain-nested.txt", "w")
+nested_file.write("plain-nested")
+nested_file.close()
+
+Path("pathlib-write.txt").write_text("pathlib-write")
+Path("python/pathlib-nested.txt").write_text("pathlib-nested")
+
+print("natural-list-has-input", "input.txt" in os.listdir())
+print("natural-list-has-python", "python" in os.listdir("."))
+print("natural-list-has-nested-seed", "nested_demo.py" in os.listdir("python"))
+print("natural-cwd", os.getcwd())
+print("natural-pathlib-read", Path("plain-open.txt").read_text())
+print("natural-context-read", Path("context-open.txt").read_text())
+print("natural-pathlib-nested-read", Path("python/pathlib-nested.txt").read_text())
+`,
+  );
+
+  await clickRun(page);
+  await waitForTerminalText(page, `natural-input-read ${inputValue}`);
+  await waitForTerminalText(page, `natural-open-write-return ${`plain-open:${inputValue}`.length}`);
+  await waitForTerminalText(page, "natural-list-has-input True");
+  await waitForTerminalText(page, "natural-list-has-python True");
+  await waitForTerminalText(page, "natural-list-has-nested-seed True");
+  await waitForTerminalText(page, "natural-cwd /local");
+  await waitForTerminalText(page, `natural-pathlib-read plain-open:${inputValue}`);
+  await waitForTerminalText(page, "natural-context-read context-open");
+  await waitForTerminalText(page, "natural-pathlib-nested-read pathlib-nested");
+
+  const plainOpenResult = await readGrantedFile(page, "plain-open.txt");
+  if (plainOpenResult !== `plain-open:${inputValue}`) {
+    throw new Error(`Expected natural Python open() write in granted folder, got "${plainOpenResult}"`);
+  }
+
+  const plainNestedResult = await readGrantedFile(page, "python/plain-nested.txt");
+  if (plainNestedResult !== "plain-nested") {
+    throw new Error(`Expected natural Python nested open() write in granted folder, got "${plainNestedResult}"`);
+  }
+
+  const contextResult = await readGrantedFile(page, "context-open.txt");
+  if (contextResult !== "context-open") {
+    throw new Error(`Expected context-manager open() write in granted folder, got "${contextResult}"`);
+  }
+
+  const pathlibResult = await readGrantedFile(page, "pathlib-write.txt");
+  if (pathlibResult !== "pathlib-write") {
+    throw new Error(`Expected pathlib write in granted folder, got "${pathlibResult}"`);
+  }
+
+  const pathlibNestedResult = await readGrantedFile(page, "python/pathlib-nested.txt");
+  if (pathlibNestedResult !== "pathlib-nested") {
+    throw new Error(`Expected nested pathlib write in granted folder, got "${pathlibNestedResult}"`);
+  }
+}
+
 async function verifyJavaScriptBridge(page) {
   await createFile(page, "local-fs-js.js");
   await setEditorValue(
@@ -367,14 +445,22 @@ async function verifyDisconnect(page) {
   await createFile(page, "local-fs-after-disconnect.py");
   await setEditorValue(
     page,
-    `from wasmforge_fs import is_connected
+    `import os
+from wasmforge_fs import is_connected
 
 print("fs-after-disconnect", is_connected())
+print("cwd-after-disconnect", os.getcwd())
+open("sandbox-only.txt", "w", encoding="utf-8").write("sandbox")
 `,
   );
 
   await clickRun(page);
   await waitForTerminalText(page, "fs-after-disconnect False");
+  await waitForTerminalText(page, "cwd-after-disconnect /workspace");
+
+  if (await grantedFileExists(page, "sandbox-only.txt")) {
+    throw new Error("Expected normal open() after disconnect to stay in the browser workspace, not the granted folder.");
+  }
 }
 
 async function main() {
@@ -406,6 +492,7 @@ async function main() {
     await waitForTerminalText(page, `Connected "${grantedFolderName}"`);
     await verifyExplorerBridge(page);
     await verifyPythonBridge(page);
+    await verifyNaturalPythonLocalFolder(page);
     await verifyJavaScriptBridge(page);
     await verifyTypeScriptBridge(page);
     await verifyDisconnect(page);
@@ -423,6 +510,7 @@ async function main() {
       defaultSandbox: "ok",
       explorerBridge: "ok",
       pythonBridge: "ok",
+      naturalPythonLocalFolder: "ok",
       javascriptBridge: "ok",
       typescriptBridge: "ok",
       disconnect: "ok",

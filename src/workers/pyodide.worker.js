@@ -154,6 +154,16 @@ builtins._wasmforge_local_folder_name = str(_wasmforgeLocalFolderName)
   `)
 }
 
+function writePyodideTextFile(filePath, content) {
+  const targetPath = String(filePath || '')
+  if (targetPath !== LOCAL_FOLDER_MOUNT_PATH && !targetPath.startsWith(`${LOCAL_FOLDER_MOUNT_PATH}/`)) {
+    throw new Error('[Local folder] Refusing to write outside the selected local folder.')
+  }
+
+  ensureVirtualParentDirectory(targetPath)
+  pyodide.FS.writeFile(targetPath, String(content ?? ''), { encoding: 'utf8' })
+}
+
 function ensureLocalFolderMountPoint() {
   try {
     pyodide.FS.mkdirTree(LOCAL_FOLDER_MOUNT_PATH)
@@ -350,6 +360,33 @@ async function persistWorkspaceToOpfs() {
   }
 }
 
+function getPythonExecutionRoot() {
+  return localFolderMount ? LOCAL_FOLDER_MOUNT_PATH : '/workspace'
+}
+
+function getPythonExecutionPath(filename = 'main.py', rootPath = getPythonExecutionRoot()) {
+  const safeFilename = String(filename || 'main.py').replace(/^\/+/u, '')
+  return `${rootPath}/${safeFilename}`
+}
+
+function configurePythonExecutionRoot(rootPath = getPythonExecutionRoot()) {
+  pyodide.globals.set('_wasmforgeExecutionRoot', rootPath)
+  pyodide.runPython(`
+import os
+import sys
+
+_wasmforge_execution_root = str(_wasmforgeExecutionRoot)
+if os.path.isdir(_wasmforge_execution_root):
+    os.chdir(_wasmforge_execution_root)
+
+for _wasmforge_path in reversed((_wasmforge_execution_root, "/workspace")):
+    if os.path.isdir(_wasmforge_path):
+        while _wasmforge_path in sys.path:
+            sys.path.remove(_wasmforge_path)
+        sys.path.insert(0, _wasmforge_path)
+  `)
+}
+
 function ensureVirtualParentDirectory(filePath) {
   const parts = String(filePath || '').split('/').filter(Boolean).slice(0, -1)
   let currentPath = ''
@@ -400,7 +437,11 @@ import os
 import sys
 
 workspace_root = os.path.abspath("/workspace")
-workspace_prefix = workspace_root + os.sep
+local_root = os.path.abspath("/local")
+reload_roots = [workspace_root]
+if os.path.isdir(local_root):
+    reload_roots.append(local_root)
+reload_prefixes = [root + os.sep for root in reload_roots]
 
 importlib.invalidate_caches()
 
@@ -414,7 +455,7 @@ for module_name, module in list(sys.modules.items()):
     except Exception:
         continue
 
-    if module_path == workspace_root or module_path.startswith(workspace_prefix):
+    if any(module_path == root or module_path.startswith(prefix) for root, prefix in zip(reload_roots, reload_prefixes)):
         sys.modules.pop(module_name, None)
 
 for cache_key in list(sys.path_importer_cache.keys()):
@@ -426,7 +467,7 @@ for cache_key in list(sys.path_importer_cache.keys()):
     except Exception:
         continue
 
-    if cache_path == workspace_root or cache_path.startswith(workspace_prefix):
+    if any(cache_path == root or cache_path.startswith(prefix) for root, prefix in zip(reload_roots, reload_prefixes)):
         sys.path_importer_cache.pop(cache_key, None)
   `)
 }
@@ -559,6 +600,10 @@ result
 async function resetNotebookPythonSession(notebookKey, filename = 'notebook.wfnb') {
   await mountWorkspace()
   await syncWorkspaceFromOpfs()
+  await mountLocalFolder()
+  const executionRoot = getPythonExecutionRoot()
+  const executionPath = getPythonExecutionPath(filename, executionRoot)
+  configurePythonExecutionRoot(executionRoot)
   await resetWorkspaceImportState()
   await resetStructuredOutputs()
   await resetMatplotlibState()
@@ -567,7 +612,7 @@ import builtins
 
 builtins._wasmforge_reset_notebook_session(
     ${JSON.stringify(notebookKey)},
-    ${JSON.stringify(`/workspace/${filename}`)},
+    ${JSON.stringify(executionPath)},
 )
   `)
 }
@@ -747,11 +792,13 @@ async function initPyodide() {
     pyodide.globals.set('postStderr', bufferStderr)
     pyodide.globals.set('_wasmforgeStdin', stdinHandler)
     pyodide.globals.set('_wasmforgeParallelMap', runParallelMapFromPython)
+    pyodide.globals.set('_wasmforgeWriteTextFile', writePyodideTextFile)
 
     // Override sys.stdout and sys.stderr to capture Python output
     // and route it to our buffering system instead of the console.
     pyodide.runPython(`
 import builtins
+import io
 import math
 import sys
 import types
@@ -760,6 +807,7 @@ builtins._wasmforge_display_payloads = []
 builtins._wasmforge_notebook_sessions = {}
 builtins._wasmforge_local_folder_connected = False
 builtins._wasmforge_local_folder_name = ""
+builtins._wasmforge_local_file_overlay = {}
 
 class _WasmForgeStdout:
     def write(self, s):
@@ -869,6 +917,175 @@ def _wasmforge_display(*objects):
 
     return objects[0] if len(objects) == 1 else objects
 
+builtins._wasmforge_original_open = builtins.open
+
+class _WasmForgeLocalTextFile:
+    def __init__(self, file_path, mode="r", encoding=None, errors=None, newline=None):
+        import io
+        import os
+
+        self.name = file_path
+        self.mode = str(mode or "r")
+        self.encoding = encoding or "utf-8"
+        self.errors = errors
+        self.newline = newline
+        self._closed = False
+        self._writable = any(flag in self.mode for flag in ("w", "a", "x", "+"))
+
+        if "x" in self.mode and os.path.exists(file_path):
+            raise FileExistsError(17, "File exists", file_path)
+
+        should_read_existing = (
+            "a" in self.mode
+            or ("+" in self.mode and "w" not in self.mode and "x" not in self.mode)
+            or ("r" in self.mode and "w" not in self.mode and "x" not in self.mode)
+        )
+
+        initial_value = ""
+        if should_read_existing:
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(2, "No such file or directory", file_path)
+            with builtins._wasmforge_original_open(
+                file_path,
+                "r",
+                encoding=self.encoding,
+                errors=errors,
+                newline=newline,
+            ) as existing_file:
+                initial_value = existing_file.read()
+
+        self._buffer = io.StringIO(initial_value, newline=newline)
+        if "a" in self.mode:
+            self._buffer.seek(0, 2)
+
+    @property
+    def closed(self):
+        return self._closed
+
+    def __getattr__(self, name):
+        return getattr(self._buffer, name)
+
+    def __iter__(self):
+        return iter(self._buffer)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def _commit(self):
+        if self._writable:
+            content = self._buffer.getvalue()
+            builtins._wasmforge_local_file_overlay[self.name] = content
+            _wasmforgeWriteTextFile(self.name, content)
+
+    def flush(self):
+        self._commit()
+
+    def close(self):
+        if self._closed:
+            return
+        self._commit()
+        self._buffer.close()
+        self._closed = True
+
+    def write(self, *args, **kwargs):
+        return self._buffer.write(*args, **kwargs)
+
+    def writelines(self, *args, **kwargs):
+        return self._buffer.writelines(*args, **kwargs)
+
+class _WasmForgeLocalTextReader:
+    def __init__(self, file_path, content, mode="r", newline=None):
+        import io
+
+        self.name = file_path
+        self.mode = str(mode or "r")
+        self._buffer = io.StringIO(content, newline=newline)
+
+    @property
+    def closed(self):
+        return self._buffer.closed
+
+    def __getattr__(self, name):
+        return getattr(self._buffer, name)
+
+    def __iter__(self):
+        return iter(self._buffer)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def close(self):
+        return self._buffer.close()
+
+def _wasmforge_resolve_local_text_path(file, mode):
+    if not builtins._wasmforge_local_folder_connected:
+        return None
+
+    mode_text = str(mode or "r")
+    if "b" in mode_text:
+        return None
+
+    import os
+
+    try:
+        raw_path = os.fspath(file)
+    except Exception:
+        return None
+
+    if not os.path.isabs(raw_path):
+        file_path = os.path.normpath("/local/" + raw_path)
+        if file_path != "/local" and not file_path.startswith("/local/"):
+            raise ValueError("Local folder paths cannot escape the selected folder")
+        return file_path
+
+    file_path = os.path.abspath(raw_path)
+
+    if file_path == "/local" or file_path.startswith("/local/"):
+        return file_path
+
+    return None
+
+def _wasmforge_open(file, mode="r", buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None):
+    mode_text = str(mode or "r")
+    local_text_path = _wasmforge_resolve_local_text_path(file, mode_text)
+
+    if local_text_path and any(flag in mode_text for flag in ("w", "a", "x", "+")):
+        return _WasmForgeLocalTextFile(
+            local_text_path,
+            mode=mode,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        )
+
+    if local_text_path and local_text_path in builtins._wasmforge_local_file_overlay:
+        return _WasmForgeLocalTextReader(
+            local_text_path,
+            builtins._wasmforge_local_file_overlay[local_text_path],
+            mode=mode,
+            newline=newline,
+        )
+
+    file_obj = builtins._wasmforge_original_open(
+        file,
+        mode,
+        buffering,
+        encoding,
+        errors,
+        newline,
+        closefd,
+        opener,
+    )
+    return file_obj
+
 def _wasmforge_reset_displays():
     builtins._wasmforge_display_payloads.clear()
 
@@ -911,6 +1128,8 @@ def _wasmforge_run_notebook_cell(source, session_key, filename="", cell_label="C
 
 sys.stdout = _WasmForgeStdout()
 sys.stderr = _WasmForgeStderr()
+builtins.open = _wasmforge_open
+io.open = _wasmforge_open
 builtins.input = _wasmforge_input
 builtins.display = _wasmforge_display
 builtins._wasmforge_reset_displays = _wasmforge_reset_displays
@@ -1074,15 +1293,17 @@ async function runPython(code, filename = 'main.py') {
     await syncWorkspaceFromOpfs()
     await mountLocalFolder()
 
-    const workspacePath = `/workspace/${filename}`
-    ensureVirtualParentDirectory(workspacePath)
-    pyodide.FS.writeFile(workspacePath, code, { encoding: 'utf8' })
+    const executionRoot = getPythonExecutionRoot()
+    const executionPath = getPythonExecutionPath(filename, executionRoot)
+    ensureVirtualParentDirectory(executionPath)
+    pyodide.FS.writeFile(executionPath, code, { encoding: 'utf8' })
 
     const packageState = await ensureLocalPackages(code, filename)
     usesMatplotlib = packageState.usesMatplotlib
 
     await resetWorkspaceImportState()
     await resetStructuredOutputs()
+    configurePythonExecutionRoot(executionRoot)
 
     if (usesMatplotlib) {
       await configureMatplotlibBackend()
@@ -1092,21 +1313,19 @@ async function runPython(code, filename = 'main.py') {
 
     await pyodide.runPythonAsync(`
 import builtins
-import os
 from pyodide.code import eval_code_async
 
-os.chdir("/workspace")
 _wasmforge_script_namespace = {
     "__name__": "__main__",
     "__package__": None,
-    "__file__": ${JSON.stringify(workspacePath)},
+    "__file__": ${JSON.stringify(executionPath)},
     "__builtins__": builtins.__dict__,
 }
 await eval_code_async(
     ${JSON.stringify(code)},
     globals=_wasmforge_script_namespace,
     locals=_wasmforge_script_namespace,
-    filename=${JSON.stringify(workspacePath)},
+    filename=${JSON.stringify(executionPath)},
 )
     `)
   } catch (err) {
@@ -1208,6 +1427,8 @@ async function runNotebookCell({
     await mountWorkspace()
     await syncWorkspaceFromOpfs()
     await mountLocalFolder()
+    const executionRoot = getPythonExecutionRoot()
+    const executionPath = getPythonExecutionPath(filename, executionRoot)
 
     const packageState = await ensureLocalPackages(code, filename)
     usesMatplotlib = packageState.usesMatplotlib
@@ -1215,6 +1436,7 @@ async function runNotebookCell({
     await resetWorkspaceImportState()
     await resetStructuredOutputs()
     await resetMatplotlibState()
+    configurePythonExecutionRoot(executionRoot)
 
     if (usesMatplotlib) {
       await configureMatplotlibBackend()
@@ -1227,7 +1449,7 @@ import builtins
 builtins._wasmforge_run_notebook_cell(
     ${JSON.stringify(code)},
     ${JSON.stringify(notebookKey)},
-    ${JSON.stringify(`/workspace/${filename}`)},
+    ${JSON.stringify(executionPath)},
     ${JSON.stringify(cellId)},
 )
     `)

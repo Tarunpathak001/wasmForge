@@ -628,6 +628,7 @@ async function verifyRestartedState(page) {
   await selectWorkspace(page, offlineProofWorkspace);
   await page.locator(`button[title="${offlineProofWorkspace}"]`).first().waitFor({ timeout: 30000 });
   await page.getByText("main.py", { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.getByText("main.py", { exact: true }).first().click();
   await waitForEditorText(page, "Offline proof > type any name:", 30000);
   await page.context().setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });

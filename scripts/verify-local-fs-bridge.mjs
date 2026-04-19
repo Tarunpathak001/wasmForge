@@ -10,6 +10,7 @@ const artifactsDir = path.join(workspaceRoot, "artifacts");
 const baseUrl = process.env.WASMFORGE_VERIFY_URL || "http://localhost:5173";
 const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = "playwright-local-fs";
+const returnWorkspace = "playwright-local-fs-return";
 const grantedFolderName = "playwright-granted-local-folder";
 const inputValue = `bridge-input-${Date.now()}`;
 const seedFilename = "bridge_seed.py";
@@ -20,6 +21,8 @@ const nestedSeedSource = 'print("nested seed from granted folder")\n';
 const editedNestedSeedSource = 'print("edited nested file through Monaco")\n';
 const detachedSeedSource = 'print("detached local change wins")\n';
 const divergedDiskSeedSource = 'print("disk changed outside WasmForge during detach")\n';
+const browserReturnFilename = "browser-return-only.py";
+const browserReturnSource = 'print("browser workspace restored")\n';
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -157,6 +160,21 @@ async function writeGrantedFile(page, filePath, content) {
 
 function displayName(filePath) {
   return String(filePath).split("/").filter(Boolean).at(-1) || filePath;
+}
+
+function fileRowSelector(filePath) {
+  return `.wf-file-row [title=${JSON.stringify(filePath)}]`;
+}
+
+async function waitForFileRow(page, filePath) {
+  await page.locator(fileRowSelector(filePath)).first().waitFor({ timeout: 20000 });
+}
+
+async function expectNoFileRow(page, filePath) {
+  const count = await page.locator(fileRowSelector(filePath)).count();
+  if (count > 0) {
+    throw new Error(`Expected ${filePath} to be absent from the file tree, saw ${count} row(s).`);
+  }
 }
 
 async function grantedFileExists(page, filePath) {
@@ -565,6 +583,32 @@ print("fs-after-unlink", is_connected())
 
 }
 
+async function verifyReturnToBrowserWorkspace(page) {
+  await ensureWorkspace(page, returnWorkspace);
+  await createFile(page, browserReturnFilename);
+  await setEditorValue(page, browserReturnSource);
+
+  await page.getByRole("button", { name: "Link local folder" }).first().click();
+  await approveLocalFolderSecurityPrompt(page);
+  await waitForFileRow(page, seedFilename);
+  await expectNoFileRow(page, browserReturnFilename);
+
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await waitForFileRow(page, seedFilename);
+
+  await openAirlockPanel(page);
+  await page.getByRole("button", { name: "Return to WebIDE" }).click();
+  await page.getByText(/Restored the normal browser workspace from before/).first().waitFor({ timeout: 20000 });
+  await waitForFileRow(page, browserReturnFilename);
+  await expectNoFileRow(page, seedFilename);
+
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
+  await waitForFileRow(page, browserReturnFilename);
+  await expectNoFileRow(page, seedFilename);
+}
+
 async function main() {
   await ensureArtifactsDir();
 
@@ -586,6 +630,7 @@ async function main() {
     await page.goto(ideUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
+    await verifyReturnToBrowserWorkspace(page);
     await ensureWorkspace(page, verificationWorkspace);
 
     await verifyDefaultSandbox(page);
@@ -618,6 +663,7 @@ async function main() {
       typescriptBridge: "ok",
       detachReattach: "ok",
       unlink: "ok",
+      returnToWebIDE: "ok",
       consoleErrors,
     }, null, 2));
   } catch (error) {

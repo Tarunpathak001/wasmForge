@@ -161,7 +161,6 @@ const LOCAL_FOLDER_TEXT_EXTENSIONS = new Set([
 const LOCAL_FOLDER_ENTRY_KIND_DIRECTORY = "directory";
 const LOCAL_FOLDER_ENTRY_KIND_FILE = "file";
 const AIRLOCK_SNAPSHOT_STORAGE_KEY_PREFIX = "wasmforge:airlock-snapshots";
-const MAX_AIRLOCK_SNAPSHOTS = 8;
 const AIRLOCK_STATUS_UNCHANGED = "unchanged";
 const AIRLOCK_STATUS_LOCAL = "local";
 const AIRLOCK_STATUS_DISK = "disk";
@@ -596,28 +595,34 @@ function getAirlockSnapshotStorageKey(workspaceName) {
   return `${AIRLOCK_SNAPSHOT_STORAGE_KEY_PREFIX}:${workspaceName || DEFAULT_WORKSPACE_NAME}`;
 }
 
-function normalizeAirlockSnapshot(snapshot) {
+function normalizeLegacyAirlockSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     return null;
   }
 
-  const files = Array.isArray(snapshot.files)
-    ? snapshot.files
-      .filter((file) => typeof file?.name === "string" && typeof file?.content === "string")
-      .map((file) => ({ name: file.name, content: file.content }))
-    : [];
+  try {
+    if (!Array.isArray(snapshot.files)) {
+      return createSnapshotRecord(snapshot);
+    }
 
-  if (!snapshot.id || files.length === 0) {
+    const files = Object.fromEntries(
+      snapshot.files
+        .filter((file) => typeof file?.name === "string" && typeof file?.content === "string")
+        .map((file) => [file.name, file.content]),
+    );
+
+    return createSnapshotRecord({
+      id: snapshot.id,
+      label: snapshot.label || "Snapshot",
+      reason: snapshot.reason || "legacy",
+      source: snapshot.source || "local",
+      linkedFolderName: snapshot.linkedFolderName || snapshot.folderName || "",
+      createdAt: snapshot.createdAt,
+      files,
+    });
+  } catch {
     return null;
   }
-
-  return {
-    id: String(snapshot.id),
-    label: String(snapshot.label || "Snapshot"),
-    folderName: String(snapshot.folderName || ""),
-    createdAt: Number(snapshot.createdAt) || Date.now(),
-    files,
-  };
 }
 
 function readStoredAirlockSnapshots(workspaceName) {
@@ -625,17 +630,38 @@ function readStoredAirlockSnapshots(workspaceName) {
     return [];
   }
 
-  try {
-    const raw = window.localStorage.getItem(getAirlockSnapshotStorageKey(workspaceName));
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) {
+  const parseSnapshotCollection = (raw) => {
+    if (!raw) {
       return [];
     }
 
-    return parsed
-      .map(normalizeAirlockSnapshot)
-      .filter(Boolean)
-      .slice(0, MAX_AIRLOCK_SNAPSHOTS);
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map(normalizeLegacyAirlockSnapshot)
+          .filter(Boolean);
+      }
+
+      return deserializeSnapshotCollection(raw);
+    } catch {
+      return [];
+    }
+  };
+
+  try {
+    const snapshots = [
+      ...parseSnapshotCollection(window.localStorage.getItem(getAirlockSnapshotsStorageKey(workspaceName))),
+      ...parseSnapshotCollection(window.localStorage.getItem(getAirlockSnapshotStorageKey(workspaceName))),
+    ];
+    const uniqueSnapshots = new Map();
+    for (const snapshot of snapshots) {
+      uniqueSnapshots.set(snapshot.id, snapshot);
+    }
+
+    return Array.from(uniqueSnapshots.values())
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, AIRLOCK_MAX_SNAPSHOTS);
   } catch {
     return [];
   }
@@ -647,26 +673,33 @@ function persistAirlockSnapshots(workspaceName, snapshots) {
   }
 
   try {
-    window.localStorage.setItem(
-      getAirlockSnapshotStorageKey(workspaceName),
-      JSON.stringify(snapshots.slice(0, MAX_AIRLOCK_SNAPSHOTS)),
-    );
+    const storageKey = getAirlockSnapshotsStorageKey(workspaceName);
+    const normalizedSnapshots = snapshots.slice(0, AIRLOCK_MAX_SNAPSHOTS);
+    if (normalizedSnapshots.length === 0) {
+      window.localStorage.removeItem(storageKey);
+      window.localStorage.removeItem(getAirlockSnapshotStorageKey(workspaceName));
+      return;
+    }
+
+    window.localStorage.setItem(storageKey, serializeSnapshotCollection(normalizedSnapshots));
+    window.localStorage.removeItem(getAirlockSnapshotStorageKey(workspaceName));
   } catch {
     // Snapshot storage is best-effort; the live workspace remains the source of truth.
   }
 }
 
 function createAirlockSnapshotRecord(fileMap, label, folderName = "") {
-  return {
+  return createSnapshotRecord({
     id: `snap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     label,
-    folderName,
+    reason: "manual",
+    source: "local",
+    linkedFolderName: folderName,
     createdAt: Date.now(),
-    files: Array.from(fileMap.values()).map((file) => ({
-      name: file.name,
-      content: file.content ?? "",
-    })),
-  };
+    files: Object.fromEntries(
+      Array.from(fileMap.values()).map((file) => [file.name, file.content ?? ""]),
+    ),
+  });
 }
 
 function formatAirlockSnapshotTime(timestamp) {
@@ -1886,7 +1919,7 @@ export default function App({ onNavigateHome }) {
     setAirlockSnapshots((previous) => {
       const next = [snapshot, ...previous]
         .filter(Boolean)
-        .slice(0, MAX_AIRLOCK_SNAPSHOTS);
+        .slice(0, AIRLOCK_MAX_SNAPSHOTS);
       persistAirlockSnapshots(activeWorkspaceRef.current, next);
       return next;
     });
@@ -3788,17 +3821,24 @@ export default function App({ onNavigateHome }) {
       localFolderBridgeRef.current.name
       || localFolderBridgeRef.current.lastSyncedSnapshot?.linkedFolderName
       || "Airlock";
+    const browserReturnSnapshot = airlockSnapshots.find((snapshot) => (
+      snapshot?.reason === "before-link"
+      && snapshot?.source === "local"
+      && snapshot?.files
+      && Object.keys(snapshot.files).length > 0
+    ));
 
     try {
       await prepareWorkspaceMutation("returning to the browser workspace");
 
       const folderHandle = localFolderBridgeRef.current.handle;
-      const entriesMap =
-        folderHandle && localFolderBridgeRef.current.syncEnabled
+      const entriesMap = browserReturnSnapshot
+        ? browserReturnSnapshot.files
+        : folderHandle && localFolderBridgeRef.current.syncEnabled
           ? await readLocalFolderTextEntries(folderHandle)
           : await captureBrowserWorkspaceEntries();
 
-      await applyBrowserWorkspaceEntries(entriesMap);
+      const restoredEntries = await applyBrowserWorkspaceEntries(entriesMap);
 
       const clearedBridge = {
         handle: null,
@@ -3822,19 +3862,22 @@ export default function App({ onNavigateHome }) {
       setBottomPanelMode("terminal");
 
       await refreshBrowserWorkspaceFiles(
-        chooseActiveFile(Object.keys(entriesMap), activeFileRef.current),
+        chooseActiveFile(Object.keys(restoredEntries), activeFileRef.current),
         {
           createDefaultIfEmpty: true,
           workspaceName: activeWorkspaceRef.current,
         },
       );
       terminalRef.current?.writeln(
-        `\x1b[36m[Airlock] Returned "${folderName}" to the normal browser workspace. Folder access and Airlock history are cleared for this workspace.\x1b[0m`,
+        browserReturnSnapshot
+          ? `\x1b[36m[Airlock] Restored the normal browser workspace from before "${folderName}" was linked. Folder access and Airlock history are cleared for this workspace.\x1b[0m`
+          : `\x1b[36m[Airlock] Returned "${folderName}" to the normal browser workspace. No pre-link browser snapshot was available, so the current shadow files were kept.\x1b[0m`,
       );
     } catch (error) {
       terminalRef.current?.writeln(`\x1b[31m[Airlock] ${error?.message || error}\x1b[0m`);
     }
   }, [
+    airlockSnapshots,
     applyBrowserWorkspaceEntries,
     captureBrowserWorkspaceEntries,
     prepareWorkspaceMutation,
@@ -7067,7 +7110,7 @@ function AirlockConflictCenter({
                     {snapshot.label}
                   </span>
                   <span style={{ display: "block", marginTop: "3px", color: "var(--ide-shell-muted)", fontSize: "10px" }}>
-                    {snapshot.files.length} files • {formatAirlockSnapshotTime(snapshot.createdAt)}
+                    {snapshot.fileCount ?? (Array.isArray(snapshot.files) ? snapshot.files.length : Object.keys(snapshot.files || {}).length)} files • {formatAirlockSnapshotTime(snapshot.createdAt)}
                   </span>
                 </button>
               ))}

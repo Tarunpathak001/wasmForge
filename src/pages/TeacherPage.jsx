@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TEST_ROOM_CODE, getSeededRoom, normalizeRoomCode } from '../utils/mockTest.js'
+import { readLocalTeacherSubmissions } from '../utils/testRoomStorage.js'
 
 const TEACHER_ROOM_STORAGE_KEY = 'wasmforge:teacher:last-room-code'
 const HEALTH_ENDPOINT = '/api/test/health'
@@ -905,14 +906,30 @@ export default function TeacherPage() {
         setHealthState(nextHealthState)
 
         if (nextHealthState.status === 'not_configured') {
+          const room = getSeededRoom(normalizedRoomCode)
+          const localSubmissions = normalizeSubmissionList(
+            { submissions: readLocalTeacherSubmissions(normalizedRoomCode) },
+            normalizedRoomCode,
+            room,
+          )
+
           setFetchState({
-            status: 'not_configured',
-            message: nextHealthState.message,
+            status: localSubmissions.length ? 'success' : 'not_configured',
+            message: localSubmissions.length
+              ? `Backend not configured. Showing ${localSubmissions.length} local browser submission${localSubmissions.length === 1 ? '' : 's'} for ${normalizedRoomCode}.`
+              : `${nextHealthState.message} No local browser submissions found yet.`,
           })
           startTransition(() => {
-            setSubmissions([])
-            setSelectedSubmissionId('')
+            setSubmissions(localSubmissions)
+            setSelectedSubmissionId((currentId) => {
+              if (localSubmissions.some((submission) => submission.id === currentId)) {
+                return currentId
+              }
+
+              return localSubmissions[0]?.id || ''
+            })
           })
+          setLastLoadedAt(localSubmissions.length ? Date.now() : null)
           return
         }
 
@@ -947,14 +964,30 @@ export default function TeacherPage() {
         }
 
         if (payload?.error === 'backend_not_configured' || looksLikeBackendNotConfigured(message)) {
+          const room = getSeededRoom(normalizedRoomCode)
+          const localSubmissions = normalizeSubmissionList(
+            { submissions: readLocalTeacherSubmissions(normalizedRoomCode) },
+            normalizedRoomCode,
+            room,
+          )
+
           setFetchState({
-            status: 'not_configured',
-            message: message || DEFAULT_NOT_CONFIGURED_MESSAGE,
+            status: localSubmissions.length ? 'success' : 'not_configured',
+            message: localSubmissions.length
+              ? `Backend not configured. Showing ${localSubmissions.length} local browser submission${localSubmissions.length === 1 ? '' : 's'} for ${normalizedRoomCode}.`
+              : `${message || DEFAULT_NOT_CONFIGURED_MESSAGE} No local browser submissions found yet.`,
           })
           startTransition(() => {
-            setSubmissions([])
-            setSelectedSubmissionId('')
+            setSubmissions(localSubmissions)
+            setSelectedSubmissionId((currentId) => {
+              if (localSubmissions.some((submission) => submission.id === currentId)) {
+                return currentId
+              }
+
+              return localSubmissions[0]?.id || ''
+            })
           })
+          setLastLoadedAt(localSubmissions.length ? Date.now() : null)
           return
         }
 

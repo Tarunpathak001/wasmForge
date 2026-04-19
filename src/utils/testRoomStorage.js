@@ -16,6 +16,7 @@ import {
 export const TEST_METADATA_FILE = "mock-test.json";
 export const TEST_ATTEMPT_FILE = "mock-attempt.json";
 export const TEST_QUEUE_FILE = "submissions/queue.json";
+export const LOCAL_TEACHER_SUBMISSIONS_KEY = "wasmforge:test:local-teacher-submissions";
 
 function isMissingFileError(error) {
   const message = error?.message || String(error || "");
@@ -129,6 +130,83 @@ export async function persistQueue(io, workspaceName, queue) {
   await writeJsonFile(io, TEST_QUEUE_FILE, normalizeQueue(queue), workspaceName);
 }
 
+function readLocalTeacherStore() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LOCAL_TEACHER_SUBMISSIONS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalTeacherStore(records) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(LOCAL_TEACHER_SUBMISSIONS_KEY, JSON.stringify(records));
+  } catch {
+    // OPFS remains the source of truth; local teacher fallback is best-effort.
+  }
+}
+
+function trimLocalTeacherStore(records) {
+  const deduped = [];
+  const seen = new Set();
+
+  for (const record of records) {
+    const id = record?.payload?.id || record?.id;
+    if (!id || seen.has(id)) {
+      continue;
+    }
+
+    seen.add(id);
+    deduped.push(record);
+  }
+
+  return deduped.slice(0, QUEUE_SUBMISSION_LIMIT);
+}
+
+export function rememberLocalTeacherSubmission(submission) {
+  if (!submission?.id) {
+    return;
+  }
+
+  const record = {
+    id: submission.id,
+    roomCode: submission.roomCode,
+    studentName: submission.studentName,
+    attemptId: submission.attemptId,
+    score: submission.score,
+    maxScore: submission.maxScore,
+    late: submission.late,
+    clientCreatedAt: submission.clientCreatedAt,
+    receivedAt: Date.now(),
+    localOnly: true,
+    payload: submission,
+  };
+
+  const existing = readLocalTeacherStore().filter((entry) => {
+    const id = entry?.payload?.id || entry?.id;
+    return id !== submission.id;
+  });
+
+  writeLocalTeacherStore(trimLocalTeacherStore([record, ...existing]));
+}
+
+export function readLocalTeacherSubmissions(roomCode) {
+  const normalizedRoomCode = String(roomCode || "").trim().toUpperCase();
+  return readLocalTeacherStore().filter((entry) => {
+    const candidateRoomCode = String(entry?.payload?.roomCode || entry?.roomCode || "").trim().toUpperCase();
+    return candidateRoomCode === normalizedRoomCode;
+  });
+}
+
 export async function enqueueSubmission(io, { workspaceName, queue, submission }) {
   const nextState = canAppendToQueue(queue, submission);
   if (!nextState.ok) {
@@ -146,6 +224,7 @@ export async function enqueueSubmission(io, { workspaceName, queue, submission }
     workspaceName,
   );
   await persistQueue(io, workspaceName, nextState.queue);
+  rememberLocalTeacherSubmission(submission);
   return nextState.queue;
 }
 

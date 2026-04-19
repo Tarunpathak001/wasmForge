@@ -3,7 +3,9 @@
 
   # WasmForge
 
-  **A local-first browser IDE and Python notebook that keeps working after Airplane Mode.**
+  **Code past the internet.**
+
+  A local-first browser IDE and Python notebook that keeps running after Airplane Mode, hard refreshes, and local-only project changes.
 
   [![Live Demo](https://img.shields.io/badge/Live-Demo-%232EA043?style=for-the-badge&logo=vercel)](https://wasm-forge.vercel.app/)
   [![Watch The Code 2026](https://img.shields.io/badge/Watch_The_Code-2026-1a252f?style=for-the-badge)](https://gehu.in/hack)
@@ -11,178 +13,310 @@
 
 </div>
 
-WasmForge is a browser-first dev and data environment where Python, Python notebooks, JavaScript, TypeScript, SQLite, and PostgreSQL run on the user's own machine through WebAssembly.
+WasmForge is a browser-first development environment where Python, Python notebooks, JavaScript, TypeScript, SQLite, and PostgreSQL run on the user's own machine through WebAssembly and Web Workers.
 
-For the browser-native core, there is no execution backend. After the first load, there is no network dependency either.
+The core runtime has no execution backend. After the first warm load, the IDE can reload and run from local cache without network access.
 
-WasmForge now also includes an **optional local-native bridge** for host toolchains. That mode stays offline and serverless in the no-cloud sense, but it is intentionally not presented as a pure browser runtime.
+For workflows that need a real project folder, WasmForge also includes **Airlock Sync**: a permission-gated bridge to a user-selected local folder with detached editing, snapshots, and conflict resolution. For native compilers, an optional localhost Host Bridge can run installed toolchains without adding a cloud backend.
 
-**[→ Open the live demo](https://wasm-forge.vercel.app/)**  
-Landing page: `/`  
-IDE: `/ide`
+**Live demo:** [https://wasm-forge.vercel.app/](https://wasm-forge.vercel.app/)
 
----
-
-## What Makes WasmForge Different
-
-Most web IDEs still depend on remote compute. They may look local, but the actual runtime lives on a server, so a network drop kills execution, persistence becomes someone else's infrastructure problem, and every run depends on cloud resources.
-
-WasmForge removes that layer entirely:
-
-- Python runs through Pyodide in a dedicated Worker
-- Python notebooks run in the same browser-native Python runtime with shared cell state
-- SQLite runs through `sql.js`
-- PostgreSQL runs through `PGlite`
-- files persist through OPFS
-- runtimes and wheels are cached by a Service Worker for offline reuse
-- synchronous `input()` works through `SharedArrayBuffer` and `Atomics`
-
-This is not a cloud IDE with an offline badge. It is a local-first browser runtime.
+**IDE route:** [https://wasm-forge.vercel.app/ide](https://wasm-forge.vercel.app/ide)
 
 ---
 
-## What We Shipped
+## Why This Exists
 
-### 1. Real Offline Proof Flow
+Most web IDEs are remote compute with a browser UI. They look local, but code execution, persistence, and recovery still depend on someone else's server.
 
-The app does not just claim offline support. It includes a visible proof path inside the IDE:
+WasmForge takes the opposite bet:
 
-- warm the runtime once
-- click `⚡ Offline-ready`
-- prepare the demo workspace
-- turn on Airplane Mode
-- hard refresh `/ide`
-- run Python again
-- answer `input()`
-- get output immediately from local runtime state
+- run supported runtimes in the browser
+- keep files in browser storage by default
+- cache runtime assets for offline reloads
+- isolate execution in Workers instead of the UI thread
+- make local folder access explicit, permission-gated, and reversible
 
-That proof flow is implemented in the product, not only in the README.
+The intended demo sentence is simple:
 
-### 2. Python Notebook Mode
-
-WasmForge now supports a scoped Python notebook mode with `.wfnb` files:
-
-- cell-based editing
-- shared Python session across cells
-- inline stdout and stderr
-- inline pandas DataFrame rendering
-- inline Matplotlib figure rendering
-- restartable Python session
-- persistence through reloads and browser restarts
-- offline rerun after runtime warmup
-
-This is intentionally scoped and honest: it is a focused Python notebook, not a fake Jupyter clone.
-
-### 3. Inline Data Output
-
-Python output is no longer terminal-only:
-
-- `display(df)` renders a structured DataFrame table inline
-- `plt.show()` renders the plot inline
-- regular stdout/stderr still works
-- execution timing and local-runtime proof remain visible
-
-### 4. Multi-File Python Imports
-
-Python in WasmForge supports sibling-file imports inside the current workspace:
-
-- `main.py` can import `helper.py`
-- helper files can import bundled packages such as NumPy
-- edits to imported modules are picked up correctly across reruns in the same worker session
-
-The current workspace model is still flat, so this is hardened multi-file import support, not full nested package UX.
-
-### 5. URL-Based Code Sharing
-
-WasmForge can share the active file through a backend-free URL:
-
-- the current editor state is encoded into the URL hash
-- opening that URL creates a dedicated `shared-*` workspace
-- the imported file can be run immediately
-- reload persistence still works afterward
-
-This is intentionally scoped to single-file sharing.
-
-### 6. Local Execution Proof
-
-Python runs surface visible proof that execution happened on the current device:
-
-- terminal completion line
-- output panel summary
-- execution duration
-- local-runtime wording that is clear in demos
-
-That makes the core claim visible instead of hidden in architecture alone.
+**Open the IDE, warm it once, turn on Airplane Mode, hard refresh, run Python with `input()`, import another file, render a plot, and keep working.**
 
 ---
 
-## Supported Files
+## Core Capabilities
 
-| File | Runtime | Output Surface |
-|------|---------|----------------|
+### Browser-Native Runtime Core
+
+The default mode is fully browser-sandboxed:
+
+- Python 3.13 through Pyodide
+- Python notebooks through `.wfnb`
+- JavaScript in a sandboxed Worker
+- TypeScript transpiled by Sucrase, then executed in the JS Worker
+- SQLite through `sql.js`
+- PostgreSQL through `PGlite`
+- OPFS-backed file persistence
+- Service Worker caching for offline reloads
+- Xterm.js terminal with interactive Python `input()`
+
+### Python That Feels Like A Local Runtime
+
+Python support includes:
+
+- `input()` without freezing the UI
+- sibling-file imports, such as `from helper import build_report`
+- NumPy and pandas bundled for offline use
+- Matplotlib inline figures from `plt.show()`
+- pandas DataFrame rendering through `display(df)`
+- local execution timing in the terminal and output panel
+- watchdog recovery for runaway Python code
+- optional parallel local Python workers through `wasmforge_parallel.parallel_map`
+
+Example:
+
+```python
+from wasmforge_parallel import parallel_map
+
+TASK = """
+def work(value):
+    return {"input": value, "triple": value * 3}
+"""
+
+results = await parallel_map(TASK, "work", list(range(6)), workers=2)
+print(results)
+```
+
+### Python Notebook Mode
+
+`.wfnb` files provide a focused notebook experience:
+
+- add and delete code cells
+- run one cell or all cells
+- keep shared Python state across cells
+- show stdout, stderr, tables, and figures inline
+- restart the notebook Python session
+- persist notebook files through reloads
+- rerun offline after runtime warmup
+
+This is intentionally scoped. It is a practical Python notebook mode, not a full Jupyter clone.
+
+### URL-Based Sharing
+
+The `Share` button encodes the active file into the URL hash:
+
+- no backend required
+- no account required
+- no database required
+- opening the link creates a dedicated `shared-*` workspace
+- the imported file can be edited, saved, and run immediately
+
+This is currently single-file sharing by design.
+
+### Airlock Sync: Real Folder, Safe Detach
+
+Airlock Sync lets the user explicitly link a real local project folder through the browser's File System Access API.
+
+When Sync is ON:
+
+- the file explorer reads from the selected folder
+- edits in WasmForge write to that folder
+- changes become visible in editors such as VS Code
+- Python, JavaScript, and TypeScript can read/write selected-folder files through controlled APIs
+
+When Sync is OFF:
+
+- WasmForge stops writing to disk
+- editing continues in a detached local shadow workspace
+- code still runs locally from the browser
+- the real folder can change independently outside WasmForge
+
+When Sync is turned back ON:
+
+- WasmForge rescans the real folder
+- compares last synced version, detached local version, and disk version
+- classifies files as unchanged, local-only, disk-only, or conflict
+- shows a Conflict Center with Keep Local, Keep Disk, and Compare actions
+
+Local snapshots are created automatically on detach and before reattach. Users can also save snapshots manually.
+
+`Return to WebIDE` exits the selected-folder mode and restores the normal browser workspace from the snapshot captured before linking. The Airlock panel shows a Return Preview so users can see exactly which files will be restored before leaving the linked-folder flow.
+
+### Local Folder APIs
+
+When a folder is linked and Sync is ON, Python can use the `wasmforge_fs` module:
+
+```python
+from wasmforge_fs import is_connected, local_root, read_text, write_text, list_files
+
+print(is_connected(), local_root())
+print(list_files("."))
+value = read_text("input.txt")
+write_text("out/result.txt", "python:" + value)
+```
+
+Standard Python file APIs also work against the selected folder while Sync is ON:
+
+```python
+from pathlib import Path
+
+text = Path("input.txt").read_text()
+Path("report.txt").write_text(text.upper())
+```
+
+JavaScript and TypeScript use `wasmforgeFS`:
+
+```js
+console.log(wasmforgeFS.isConnected(), wasmforgeFS.localRoot());
+const value = await wasmforgeFS.readText("input.txt");
+await wasmforgeFS.writeText("js-result.txt", `js:${value}`);
+```
+
+Paths are relative to the granted folder. Escape attempts such as `../secret.txt` are blocked.
+
+### Optional Host Bridge
+
+The optional Host Bridge is for native toolchains that cannot honestly be claimed as browser-native.
+
+If the user runs:
+
+```bash
+npm run bridge
+```
+
+and then explicitly connects from the IDE, WasmForge can run installed local toolchains through a localhost companion process.
+
+Current bridge runners:
+
+- C
+- C++
+- Go
+- Rust
+- Java
+- Zig
+
+This mode is offline and local, but it is not the pure browser runtime. It requires a local process, a visible security prompt, and user confirmation before toolchain detection.
+
+---
+
+## Supported File Types
+
+| File type | Runtime | Output |
+|---|---|---|
+| `.py` | Pyodide / CPython 3.13 compiled to WebAssembly | Terminal + Python output panel |
 | `.wfnb` | Python notebook session via Pyodide | Inline cell output, DataFrames, Matplotlib |
-| `.py` | Pyodide (CPython 3.13 -> Wasm) | Terminal + Python output panel |
-| `.js` | Sandboxed JS Worker | Terminal |
-| `.ts` | Sucrase -> JS Worker | Terminal |
-| `.sql` | `sql.js` (SQLite -> Wasm) | Results grid + schema inspector |
-| `.pg` | `PGlite` (PostgreSQL -> Wasm) | Results grid + schema inspector |
+| `.js` | Sandboxed JavaScript Worker | Terminal |
+| `.ts` | Sucrase -> sandboxed JavaScript Worker | Terminal |
+| `.sql` | SQLite through `sql.js` | Results grid + schema inspector |
+| `.pg` | PostgreSQL through `PGlite` | Results grid + schema inspector |
+| `.c`, `.cpp`, `.go`, `.rs`, `.java`, `.zig` | Optional Host Bridge only | Terminal |
 
-**Bundled Python packages for offline use:** NumPy, pandas, matplotlib, python-dateutil, pytz, six, tzdata, plus required plotting dependencies.
+Bundled Python packages for offline use include NumPy, pandas, matplotlib, python-dateutil, pytz, six, tzdata, and required plotting dependencies.
 
-### Optional Host Toolchains
-
-If you start the local bridge with `npm run bridge`, WasmForge can detect host toolchains already installed on the same machine and run extra languages against a temporary local snapshot of the current workspace.
-
-- current bridge runners: C, C++, Go, Rust, Java, Zig
-- files stay editable in the IDE and persist through the existing workspace/local-folder flows
-- execution stays offline and local
-- this mode uses a localhost companion process, so it is **not** part of the pure in-browser claim
+Unsupported or binary files in linked folders are visible in the explorer when possible, but WasmForge does not pretend to edit every file type.
 
 ---
 
-## What A Judge Can Verify Live
+## Security Model
 
-If you only have one minute to understand the product, verify these:
+WasmForge is designed around explicit trust boundaries.
 
-### Offline Reload Proof
+### Default Browser Workspace
 
-1. Open [the live demo](https://wasm-forge.vercel.app/ide)
-2. Click `⚡ Offline-ready`
-3. Click `Prepare Demo Workspace`
-4. Turn on Airplane Mode
-5. Hard refresh `/ide`
-6. Run `main.py`
-7. Enter a name at the prompt
+- No direct OS filesystem access
+- Files are stored inside the browser origin through OPFS
+- User code runs in Workers, not on the UI thread
+- Service Worker caching is used for offline reloads, not remote execution
+- Network access is not required after runtime warmup for the core demo path
 
-You should still see:
+### Airlock Local Folder
 
-- `offline-proof ok for <name>`
-- `helper-import ok 20`
-- local execution timing
+- Requires the browser's native folder permission prompt
+- Access is limited to the folder the user selects
+- Sync OFF stops disk writes and switches to a detached shadow workspace
+- Snapshots protect local work before detach and reattach
+- Reattach uses deterministic comparison before writing back
+- Path normalization blocks `..`, absolute paths, and folder escape attempts
 
-### Notebook Proof
+### Host Bridge
 
-1. Create a notebook
-2. Run a setup cell that defines a variable
-3. Run a second cell that uses it
-4. Render a DataFrame
-5. Render a Matplotlib figure
-6. Refresh and rerun
-
-That demonstrates shared Python session state, inline rich output, persistence, and offline-ready notebook execution.
-
-### Share Proof
-
-1. Open any file
-2. Click `Share`
-3. Open the copied link in a new tab
-4. Run the imported file
-
-The receiver gets a dedicated `shared-*` workspace with the shared file already loaded.
+- Disabled unless the user starts `npm run bridge`
+- The IDE does not silently scan host compilers on load
+- Connecting requires an explicit security prompt
+- The bridge runs on localhost and executes temporary workspace snapshots
+- It is intentionally documented as optional local-native mode, not browser-native execution
 
 ---
 
-## System Architecture
+## Demo Checklist
+
+### 1. Offline Proof
+
+1. Open `/ide`.
+2. Click `⚡ Offline-ready`.
+3. Click `Prepare Demo Workspace`.
+4. Wait for the checks to pass.
+5. Turn on Airplane Mode or disable Wi-Fi.
+6. Hard refresh `/ide`.
+7. Run `main.py`.
+8. Enter a name at the prompt.
+
+Expected proof:
+
+- Python still runs
+- `input()` still works
+- `helper.py` imports still work
+- files are still present
+- terminal shows local execution timing
+
+### 2. Notebook Proof
+
+1. Create a notebook.
+2. Run a setup cell that defines a variable.
+3. Run another cell that uses it.
+4. Render a DataFrame with `display(df)`.
+5. Render a chart with `plt.show()`.
+6. Refresh and rerun.
+
+Expected proof:
+
+- shared notebook state survives across cells
+- rich inline output works
+- notebook files persist locally
+
+### 3. Airlock Sync Proof
+
+1. Click `Link Folder`.
+2. Approve the local folder security prompt and browser permission.
+3. Edit a file in WasmForge.
+4. Open the same folder in VS Code and confirm the file changed.
+5. Click `Turn Sync Off`.
+6. Edit in WasmForge again and confirm disk does not change.
+7. Change the disk file externally.
+8. Click `Reattach Sync`.
+9. Resolve the Conflict Center.
+
+Expected proof:
+
+- Sync ON writes to disk
+- Sync OFF does not write to disk
+- snapshots exist
+- conflicts are detected before reattach
+
+### 4. Share Proof
+
+1. Open a file.
+2. Click `Share`.
+3. Open the copied URL in a new tab.
+4. Run the imported file.
+
+Expected proof:
+
+- no backend sharing service is involved
+- the receiver gets a runnable local workspace
+
+---
+
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -190,92 +324,53 @@ flowchart TD
 
     IDE --> Router["Execution Router<br/>extension -> runtime"]
     IDE --> IO["I/O Worker<br/>OPFS persistence"]
-    IDE --> SW["Service Worker<br/>offline runtime caching"]
+    IDE --> SW["Service Worker<br/>offline runtime cache"]
+    IDE --> Airlock["Airlock Sync<br/>selected-folder workflow"]
+    IDE --> Host["Optional Host Bridge<br/>localhost native toolchains"]
 
-    Router --> PY["Python Worker<br/>Pyodide / CPython -> Wasm"]
+    Router --> PY["Python Worker<br/>Pyodide / CPython 3.13"]
     Router --> JS["JS/TS Worker<br/>sandboxed execution"]
-    Router --> SQ["SQLite Worker<br/>sql.js -> Wasm"]
-    Router --> PG["PostgreSQL Worker<br/>PGlite -> Wasm"]
+    Router --> SQ["SQLite Worker<br/>sql.js"]
+    Router --> PG["PostgreSQL Worker<br/>PGlite"]
 
     PY --> NB["Notebook Cells<br/>shared Python session"]
-    PY --> PO["Python Output Panel<br/>tables + figures + local timing"]
-    JS --> TERM["Terminal / Output Surfaces"]
-    SQ --> TERM
-    PG --> TERM
+    PY --> Rich["Python Output Panel<br/>tables + figures + timing"]
+    PY --> Parallel["Parallel Python Workers<br/>parallel_map"]
 
-    IO --> OPFS["Origin Private File System<br/>persistent files + DB state"]
-    SW --> CACHE["Cached Pyodide runtime,<br/>stdlib, wheels, app assets"]
+    JS --> Terminal["Terminal"]
+    SQ --> Results["SQL Results Panel"]
+    PG --> Results
+
+    IO --> OPFS["Origin Private File System<br/>browser workspace"]
+    SW --> Cache["Cached app, Pyodide,<br/>stdlib, wheels, Wasm assets"]
+
+    Airlock --> Folder["User-selected local folder<br/>File System Access API"]
+    Airlock --> Shadow["Detached shadow workspace<br/>snapshots + conflicts"]
+    Host --> Toolchains["Installed compilers<br/>C/C++/Go/Rust/Java/Zig"]
 ```
 
-### Why the UI stays responsive
+### Threading Model
 
-User code never runs on the main thread.
+User code does not run on the main UI thread.
 
-- Python, JS/TS, SQLite, PostgreSQL, and file I/O all run in Workers
-- the UI stays interactive even if code blocks or crashes
-- Python infinite loops are contained by a watchdog that terminates and respawns the worker
+- Python runs in a Pyodide Worker.
+- JavaScript and TypeScript run in a JS Worker.
+- SQLite and PostgreSQL run in separate database Workers.
+- File persistence runs through an I/O Worker.
+- Parallel Python tasks use extra local Python Workers.
+- The main thread owns UI, editor state, terminal input, and orchestration.
 
-### Why `input()` works
+### Interactive Input
 
-Python `input()` is synchronous, so WasmForge uses `SharedArrayBuffer` and `Atomics.wait()` to block only the Python Worker while the terminal collects input from the user.
+Python `input()` is synchronous. WasmForge supports it with `SharedArrayBuffer` and `Atomics.wait()`, blocking only the Python Worker while the terminal collects input from the user.
 
-### Why files survive reloads
+### Recovery
 
-Editor changes are persisted into the Origin Private File System through a dedicated I/O Worker. That includes regular source files, notebook files, and SQL state.
-
-### Why Airplane Mode still works
-
-The runtime assets, wheels, Wasm binaries, and app bundle are cached locally by the Service Worker. After the first warm load, `/ide` can reload from cache instead of a server.
-
----
-
-## Tech Stack
-
-| Technology | Role |
-|-----------|------|
-| React 18 | UI shell, routing, orchestration |
-| Vite + `vite-plugin-pwa` | build pipeline, Service Worker generation |
-| Monaco Editor | code editing surface |
-| Pyodide | CPython 3.13 compiled to WebAssembly |
-| `sql.js` | SQLite compiled to WebAssembly |
-| `PGlite` | PostgreSQL compiled to WebAssembly with browser persistence |
-| Xterm.js | terminal surface |
-| Sucrase | runtime TypeScript transpilation |
-| Web Workers | isolated execution and OPFS I/O |
-| OPFS | persistent local storage |
-| `SharedArrayBuffer` + `Atomics` | synchronous `input()` without freezing the UI |
+Long-running or broken code is isolated from the UI. Workers can be killed and respawned without deleting OPFS files, local snapshots, or Service Worker caches.
 
 ---
 
-## Verification
-
-WasmForge ships end-to-end verification scripts for the core claims:
-
-```bash
-npm run verify:ide
-npm run verify:notebook
-npm run verify:share
-npm run verify:mobile
-npm run verify:claims
-npm run verify:all
-```
-
-What they cover:
-
-- Python, JavaScript, TypeScript, SQLite, PostgreSQL
-- notebook shared-session behavior
-- inline DataFrame rendering
-- inline Matplotlib rendering
-- share-link import flow
-- offline proof flow
-- persistence across reload and browser restart
-- service worker control and cached runtime assets
-- JS kill recovery
-- Python watchdog recovery
-
----
-
-## Local Setup
+## Local Development
 
 ```bash
 git clone https://github.com/Yumekaz/WasmForge.git
@@ -284,25 +379,32 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` for the landing page or `http://localhost:5173/ide` for the IDE.
+Open:
 
-Verify cross-origin isolation in DevTools:
+- Landing page: `http://localhost:5173`
+- IDE: `http://localhost:5173/ide`
+
+For synchronous Python input, the page must be cross-origin isolated:
 
 ```js
 window.crossOriginIsolated
 ```
 
-This must be `true` for synchronous `input()` support.
+Expected value:
+
+```js
+true
+```
 
 ### Optional Host Bridge
 
-In a second terminal, start the optional local-native bridge:
+Start the localhost bridge in a second terminal:
 
 ```bash
 npm run bridge
 ```
 
-Then click `Host Bridge` inside the IDE. WasmForge will probe localhost, detect installed host toolchains, and route supported non-browser languages through that bridge.
+Then click `Host Bridge` in the IDE and approve the security prompt.
 
 ### Production Preview
 
@@ -311,63 +413,128 @@ npm run build
 npm run preview
 ```
 
-Then open `/ide`, let the Service Worker take control, and test the offline proof flow.
+Then open `/ide`, let the Service Worker take control, and test the offline proof path.
 
 ---
 
-## Repository Structure
+## Verification
+
+WasmForge includes Playwright-based verification scripts for the main product claims.
+
+```bash
+npm run verify:ide
+npm run verify:parallel
+npm run verify:local-fs
+npm run verify:notebook
+npm run verify:share
+npm run verify:mobile
+npm run verify:claims
+npm run verify:all
+```
+
+Coverage includes:
+
+- Python execution
+- JavaScript execution
+- TypeScript execution
+- SQLite queries
+- PostgreSQL queries
+- Python multi-file imports
+- Python `input()`
+- inline DataFrame output
+- inline Matplotlib output
+- Python notebook cells and shared state
+- parallel Python workers
+- URL share import flow
+- mobile layout behavior
+- Service Worker offline readiness
+- local folder linking
+- Python, JavaScript, and TypeScript local-folder file APIs
+- Airlock detach, snapshots, reattach, conflict resolution, unlink, and return-to-WebIDE behavior
+- worker kill/recovery flows
+
+---
+
+## Repository Map
 
 ```text
 src/
-├── App.jsx                      - main IDE shell, routing, runtime orchestration
+├── App.jsx                      - IDE shell, routing, runtime orchestration, Airlock flow
 ├── main.jsx                     - landing vs IDE route handling
 ├── components/
+│   ├── AirlockSyncPanel.jsx     - sync state, snapshots, conflict UI, return preview
 │   ├── Editor.jsx               - Monaco integration
 │   ├── FileTree.jsx             - explorer, file actions, notebook creation
 │   ├── LandingPage.jsx          - branded landing page
 │   ├── OfflineProofPanel.jsx    - visible offline proof flow
 │   ├── PythonNotebook.jsx       - scoped Python notebook UI
-│   ├── PythonOutputPanel.jsx    - inline Python tables, figures, execution proof
+│   ├── PythonOutputPanel.jsx    - inline tables, figures, execution proof
 │   ├── SchemaInspector.jsx      - SQL schema browser
 │   ├── SqlResultsPanel.jsx      - SQL results grid
 │   └── Terminal.jsx             - Xterm.js terminal surface
 ├── hooks/
-│   ├── useIOWorker.js           - OPFS abstraction
+│   ├── useHostBridge.js         - optional localhost bridge lifecycle
+│   ├── useIOWorker.js           - OPFS persistence abstraction
 │   ├── useJsWorker.js           - JS/TS runtime management
 │   ├── usePyodideWorker.js      - Python lifecycle, notebook calls, watchdog recovery
 │   └── useSqlWorkers.js         - SQLite and PostgreSQL runtime management
 ├── utils/
-│   ├── pythonNotebook.js        - notebook document format + helpers
-│   └── sqlRuntime.js            - runtime routing
+│   ├── airlockSync.js           - snapshots, hashes, reconciliation helpers
+│   ├── pythonNotebook.js        - notebook document format helpers
+│   └── sqlRuntime.js            - file extension runtime routing
 └── workers/
-    ├── io.worker.js             - OPFS sync writes
-    ├── js.worker.js             - JS/TS sandbox
+    ├── io.worker.js             - OPFS reads/writes
+    ├── js.worker.js             - JS/TS sandbox and local folder API
     ├── pglite.worker.js         - PostgreSQL runtime
-    ├── pyodide.worker.js        - Python runtime, notebook cells, plots, tables
+    ├── pyodide.worker.js        - Python, notebooks, plots, tables, local folder API
     └── sqlite.worker.js         - SQLite runtime
 
+public/
+├── pyodide/                      - Pyodide runtime, stdlib, Matplotlib wheel set
+├── pyodide-wheels/               - NumPy, pandas, and dependency wheels
+└── workers/
+    └── pyodide.parallel.worker.js
+
 scripts/
-├── verify-ide.mjs               - main IDE verification
-├── verify-notebook.mjs          - notebook verification
-├── verify-share.mjs             - share-flow verification
-├── verify-mobile-ui.mjs         - mobile-shell verification
-└── verify-claims.mjs            - offline/cache/restart proof verification
+├── wasmforge-bridge.mjs          - optional localhost native toolchain bridge
+├── verify-claims.mjs             - offline/cache/restart proof verification
+├── verify-ide.mjs                - main IDE verification
+├── verify-local-fs-bridge.mjs    - Airlock and selected-folder verification
+├── verify-mobile-ui.mjs          - mobile-shell verification
+├── verify-notebook.mjs           - notebook verification
+├── verify-parallel-workers.mjs   - parallel Python worker verification
+└── verify-share.mjs              - share-link verification
 ```
+
+---
+
+## Honest Boundaries
+
+WasmForge is intentionally clear about what is and is not browser-native.
+
+- C, C++, Go, Rust, Java, and Zig require the optional Host Bridge and installed local toolchains.
+- Airlock Sync requires a Chromium/Edge-class browser with the File System Access API on HTTPS or localhost.
+- Browser workspaces are origin-scoped. Files stored on `localhost` and files stored on the deployed Vercel origin are separate.
+- URL sharing is currently active-file sharing, not whole-project sharing.
+- Notebook Mode is Python-focused and scoped for demo reliability.
+- The Host Bridge is local-native mode, not part of the pure WebAssembly runtime claim.
+
+These boundaries are deliberate. WasmForge prioritizes a reliable local-first demo over fake breadth.
 
 ---
 
 ## Final Claim
 
-WasmForge is not trying to be a prettier cloud IDE.
+WasmForge is not just a prettier web IDE.
 
-It is trying to prove something more interesting:
+It proves that a browser tab can be a real local dev and data environment:
 
-**a browser tab can be a real local dev and data environment, with no backend runtime, no post-load network dependency, and no collapse when the internet disappears.**
+- serverless for supported browser runtimes
+- offline after warmup
+- persistent across reloads
+- resilient to worker crashes
+- capable of selected-folder sync without hiding the security boundary
 
-And when the pure browser boundary is not enough, the optional local-native bridge extends that same local-first model to host compilers without introducing any cloud dependency.
-
-That is the bet this project is making.
-
----
+And when the browser boundary is not enough, the optional Host Bridge extends the local-first model to installed native compilers without introducing cloud execution.
 
 **Team Codeinit — Watch The Code 2026 — PS #10: WebIDE**

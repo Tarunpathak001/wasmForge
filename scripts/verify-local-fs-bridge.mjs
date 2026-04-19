@@ -11,7 +11,9 @@ const baseUrl = process.env.WASMFORGE_VERIFY_URL || "http://localhost:5173";
 const ideUrl = new URL("/ide", baseUrl).toString();
 const verificationWorkspace = "playwright-local-fs";
 const returnWorkspace = "playwright-local-fs-return";
+const failedInitialLinkWorkspace = `playwright-failed-initial-link-${Date.now()}`;
 const grantedFolderName = "playwright-granted-local-folder";
+const unreadableFolderName = "playwright-unreadable-local-folder";
 const inputValue = `bridge-input-${Date.now()}`;
 const seedFilename = "bridge_seed.py";
 const seedSource = 'print("seed from granted folder")\n';
@@ -23,6 +25,8 @@ const detachedSeedSource = 'print("detached local change wins")\n';
 const divergedDiskSeedSource = 'print("disk changed outside WasmForge during detach")\n';
 const browserReturnFilename = "browser-return-only.py";
 const browserReturnSource = 'print("browser workspace restored")\n';
+const failedInitialLinkFilename = "failed-initial-link-browser.py";
+const unreadableSeedFilename = "read-fails.py";
 
 async function ensureArtifactsDir() {
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -223,11 +227,13 @@ async function installDirectoryPickerMock(page) {
   await page.addInitScript(
     async ({
       folderName,
+      unreadableFolderName: grantedUnreadableFolderName,
       seedText,
       seedFilename: grantedSeedFilename,
       seedSource: grantedSeedSource,
       nestedSeedFilename: grantedNestedSeedFilename,
       nestedSeedSource: grantedNestedSeedSource,
+      unreadableSeedFilename: grantedUnreadableSeedFilename,
     }) => {
       const writeTextFile = async (directory, selectedPath, text) => {
         const parts = selectedPath.split("/").filter(Boolean);
@@ -241,7 +247,7 @@ async function installDirectoryPickerMock(page) {
         await writable.close();
       };
 
-      window.showDirectoryPicker = async () => {
+      const createGrantedDirectory = async () => {
         const root = await navigator.storage.getDirectory();
         const directory = await root.getDirectoryHandle(folderName, { create: true });
 
@@ -258,16 +264,97 @@ async function installDirectoryPickerMock(page) {
 
         return directory;
       };
+
+      const createUnreadableDirectory = () => {
+        const fileHandle = {
+          kind: "file",
+          name: grantedUnreadableSeedFilename,
+          async getFile() {
+            throw new Error(`mock read failed while opening ${grantedUnreadableSeedFilename}`);
+          },
+        };
+
+        return {
+          kind: "directory",
+          name: grantedUnreadableFolderName,
+          async queryPermission() {
+            return "granted";
+          },
+          async requestPermission() {
+            return "granted";
+          },
+          async *entries() {
+            yield [grantedUnreadableSeedFilename, fileHandle];
+          },
+          async getFileHandle(name) {
+            if (name === grantedUnreadableSeedFilename) {
+              return fileHandle;
+            }
+            throw new Error(`mock unreadable folder is missing ${name}`);
+          },
+          async getDirectoryHandle(name) {
+            throw new Error(`mock unreadable folder has no directory ${name}`);
+          },
+        };
+      };
+
+      let directoryPickerMockMode = "granted";
+      window.__wasmForgeSetDirectoryPickerMockMode = (mode) => {
+        directoryPickerMockMode = mode;
+      };
+
+      window.showDirectoryPicker = async () => {
+        if (directoryPickerMockMode === "unreadable") {
+          return createUnreadableDirectory();
+        }
+
+        return createGrantedDirectory();
+      };
     },
     {
       folderName: grantedFolderName,
+      unreadableFolderName,
       seedText: inputValue,
       seedFilename,
       seedSource,
       nestedSeedFilename,
       nestedSeedSource,
+      unreadableSeedFilename,
     },
   );
+}
+
+async function setDirectoryPickerMockMode(page, mode) {
+  await page.evaluate((nextMode) => {
+    if (typeof window.__wasmForgeSetDirectoryPickerMockMode !== "function") {
+      throw new Error("Directory picker mock mode helper is not installed.");
+    }
+    window.__wasmForgeSetDirectoryPickerMockMode(nextMode);
+  }, mode);
+}
+
+async function readAirlockStorageState(page, workspaceName) {
+  return page.evaluate((selectedWorkspace) => {
+    const keys = [
+      `wasmforge:airlock:meta:${selectedWorkspace}`,
+      `wasmforge:airlock:last-sync:${selectedWorkspace}`,
+      `wasmforge:airlock:snapshots:${selectedWorkspace}`,
+      `wasmforge:airlock-snapshots:${selectedWorkspace}`,
+    ];
+
+    return Object.fromEntries(keys.map((key) => [key, window.localStorage.getItem(key)]));
+  }, workspaceName);
+}
+
+async function expectNoAirlockStorageState(page, workspaceName) {
+  const storageState = await readAirlockStorageState(page, workspaceName);
+  const presentEntries = Object.entries(storageState).filter(([, value]) => value !== null);
+
+  if (presentEntries.length > 0) {
+    throw new Error(
+      `Expected no Airlock storage for ${workspaceName}, found ${JSON.stringify(Object.fromEntries(presentEntries))}`,
+    );
+  }
 }
 
 async function renameFileFromTree(page, currentName, nextName) {
@@ -299,6 +386,49 @@ exec('try:\\n    read_text("input.txt")\\nexcept RuntimeError as exc:\\n    prin
   await clickRun(page);
   await waitForTerminalText(page, "fs-default-connected False");
   await waitForTerminalText(page, "fs-default-blocked No local folder connected");
+}
+
+async function verifyFailedInitialLink(page) {
+  await ensureWorkspace(page, failedInitialLinkWorkspace);
+  await createFile(page, failedInitialLinkFilename);
+  await setEditorValue(
+    page,
+    `from wasmforge_fs import is_connected
+
+print("failed-initial-link-connected", is_connected())
+`,
+  );
+  await expectNoAirlockStorageState(page, failedInitialLinkWorkspace);
+
+  await setDirectoryPickerMockMode(page, "unreadable");
+  try {
+    await page.getByRole("button", { name: "Link local folder" }).first().click();
+    await approveLocalFolderSecurityPrompt(page);
+    await waitForTerminalText(page, `mock read failed while opening ${unreadableSeedFilename}`);
+  } finally {
+    await setDirectoryPickerMockMode(page, "granted");
+  }
+
+  await page.getByText("Sandboxed browser workspace", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: "Link local folder" }).first().waitFor({ timeout: 20000 });
+  await waitForFileRow(page, failedInitialLinkFilename);
+
+  const fakeAirlockLabels = [
+    `Airlock sync on: ${unreadableFolderName}`,
+    `Airlock detached: ${unreadableFolderName}`,
+    "Airlock shadow workspace saved locally",
+  ];
+  for (const label of fakeAirlockLabels) {
+    const count = await page.getByText(label, { exact: true }).count();
+    if (count > 0) {
+      throw new Error(`Expected failed initial link to stay sandboxed, but saw "${label}".`);
+    }
+  }
+
+  await expectNoAirlockStorageState(page, failedInitialLinkWorkspace);
+  await clickRun(page);
+  await waitForTerminalText(page, "failed-initial-link-connected False");
+  await expectNoAirlockStorageState(page, failedInitialLinkWorkspace);
 }
 
 async function verifyExplorerBridge(page) {
@@ -618,11 +748,19 @@ async function main() {
 
   page.on("console", (message) => {
     if (message.type() === "error") {
-      consoleErrors.push(message.text());
+      const text = message.text();
+      if (text.includes("Canceled: Canceled")) {
+        return;
+      }
+      consoleErrors.push(text);
     }
   });
   page.on("pageerror", (error) => {
-    consoleErrors.push(String(error));
+    const text = String(error);
+    if (text.includes("Canceled: Canceled")) {
+      return;
+    }
+    consoleErrors.push(text);
   });
 
   try {
@@ -631,6 +769,7 @@ async function main() {
     await page.getByRole("button", { name: /Run/ }).waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
     await verifyReturnToBrowserWorkspace(page);
+    await verifyFailedInitialLink(page);
     await ensureWorkspace(page, verificationWorkspace);
 
     await verifyDefaultSandbox(page);
@@ -659,6 +798,7 @@ async function main() {
       explorerBridge: "ok",
       pythonBridge: "ok",
       naturalPythonLocalFolder: "ok",
+      failedInitialLink: "ok",
       javascriptBridge: "ok",
       typescriptBridge: "ok",
       detachReattach: "ok",

@@ -1283,6 +1283,32 @@ function persistAirlockLastSyncedSnapshot(workspaceName, snapshot) {
   window.localStorage.setItem(storageKey, serializeSnapshotRecord(snapshot));
 }
 
+function snapshotEntriesEqual(leftEntries = {}, rightEntries = {}) {
+  const left = normalizeSnapshotEntries(leftEntries);
+  const right = normalizeSnapshotEntries(rightEntries);
+  const leftPaths = Object.keys(left);
+  const rightPaths = Object.keys(right);
+
+  if (leftPaths.length !== rightPaths.length) {
+    return false;
+  }
+
+  return leftPaths.every((path, index) => (
+    path === rightPaths[index]
+    && left[path] === right[path]
+  ));
+}
+
+function createLocalEntriesFromReconciliation(entries = []) {
+  return normalizeSnapshotEntries(
+    Object.fromEntries(
+      entries
+        .filter((entry) => typeof entry?.localContent === "string")
+        .map((entry) => [entry.path, entry.localContent]),
+    ),
+  );
+}
+
 
 
 function createInitialLocalFolderBridge(workspaceName = readPersistedActiveWorkspace()) {
@@ -2247,14 +2273,14 @@ export default function App({ onNavigateHome }) {
       .map((entry) => normalizeLocalFolderPath(entry.name));
     const nextPaths = new Set(Object.keys(normalizedEntries));
 
+    for (const [filename, content] of Object.entries(normalizedEntries)) {
+      await writeLocalFolderTextFile(folderHandle, filename, content);
+    }
+
     for (const filename of currentTextFiles) {
       if (!nextPaths.has(filename)) {
         await deleteLocalFolderTextFile(folderHandle, filename);
       }
-    }
-
-    for (const [filename, content] of Object.entries(normalizedEntries)) {
-      await writeLocalFolderTextFile(folderHandle, filename, content);
     }
 
     return normalizedEntries;
@@ -3427,44 +3453,83 @@ export default function App({ onNavigateHome }) {
       return;
     }
 
-    if (hasPendingConflicts(airlockReconciliation.entries)) {
+    try {
+      setAirlockBusy(true);
+
+      if (hasPendingConflicts(airlockReconciliation.entries)) {
+        terminalRef.current?.writeln(
+          "\x1b[33m[Airlock] Resolve every conflict before reattaching sync.\x1b[0m",
+        );
+        return;
+      }
+
+      await prepareWorkspaceMutation("completing Airlock reattach");
+      const currentLocalEntries = await captureBrowserWorkspaceEntries();
+      const scannedLocalEntries = createLocalEntriesFromReconciliation(airlockReconciliation.entries);
+
+      if (!snapshotEntriesEqual(currentLocalEntries, scannedLocalEntries)) {
+        const currentDiskEntries = await readLocalFolderTextEntries(folderHandle);
+        const nextReconciliation = createReconciliationResult({
+          lastSynced: localFolderBridgeRef.current.lastSyncedSnapshot?.files || {},
+          currentLocal: currentLocalEntries,
+          currentDisk: currentDiskEntries,
+        });
+        setAirlockReconciliation(nextReconciliation);
+        openAirlockPanel();
+        terminalRef.current?.writeln(
+          "\x1b[33m[Airlock] Detached files changed after the reattach scan. WasmForge refreshed the Conflict Center; review the latest changes before completing reattach.\x1b[0m",
+        );
+        return;
+      }
+
+      const mergedEntries = buildResolvedFileMap(airlockReconciliation.entries);
+      await applyLocalFolderEntries(folderHandle, mergedEntries);
+      await applyBrowserWorkspaceEntries(mergedEntries);
+
+      const baseline = createSnapshotRecord({
+        label: `Synced · ${folderName}`,
+        reason: "reattached",
+        source: "merged",
+        linkedFolderName: folderName,
+        files: mergedEntries,
+      });
+      const nextBridge = {
+        ...localFolderBridgeRef.current,
+        syncEnabled: true,
+        lastSyncedSnapshot: baseline,
+      };
+
+      localFolderBridgeRef.current = nextBridge;
+      setLocalFolderBridge(nextBridge);
+      setAirlockReconciliation(null);
+      setOfflineProofVisible(false);
+      openAirlockPanel();
+      await refreshLocalFolderFiles(folderHandle, activeFileRef.current);
       terminalRef.current?.writeln(
-        "\x1b[33m[Airlock] Resolve every conflict before reattaching sync.\x1b[0m",
+        `\x1b[36m[Airlock] Sync reattached for "${folderName}". WebIDE and disk are aligned again.\x1b[0m`,
       );
-      return;
+    } catch (error) {
+      const detachedBridge = {
+        ...localFolderBridgeRef.current,
+        syncEnabled: false,
+      };
+      localFolderBridgeRef.current = detachedBridge;
+      setLocalFolderBridge(detachedBridge);
+      openAirlockPanel();
+      terminalRef.current?.writeln(
+        `\x1b[31m[Airlock] Reattach did not complete: ${error?.message || error}\x1b[0m`,
+      );
+    } finally {
+      setAirlockBusy(false);
     }
-
-    const mergedEntries = buildResolvedFileMap(airlockReconciliation.entries);
-    await applyLocalFolderEntries(folderHandle, mergedEntries);
-    await applyBrowserWorkspaceEntries(mergedEntries);
-
-    const baseline = createSnapshotRecord({
-      label: `Synced · ${folderName}`,
-      reason: "reattached",
-      source: "merged",
-      linkedFolderName: folderName,
-      files: mergedEntries,
-    });
-    const nextBridge = {
-      ...localFolderBridgeRef.current,
-      syncEnabled: true,
-      lastSyncedSnapshot: baseline,
-    };
-
-    localFolderBridgeRef.current = nextBridge;
-    setLocalFolderBridge(nextBridge);
-    setAirlockReconciliation(null);
-    setOfflineProofVisible(false);
-    openAirlockPanel();
-    await refreshLocalFolderFiles(folderHandle, activeFileRef.current);
-    terminalRef.current?.writeln(
-      `\x1b[36m[Airlock] Sync reattached for "${folderName}". WebIDE and disk are aligned again.\x1b[0m`,
-    );
   }, [
     airlockReconciliation,
     applyBrowserWorkspaceEntries,
     applyLocalFolderEntries,
+    captureBrowserWorkspaceEntries,
     openAirlockPanel,
+    prepareWorkspaceMutation,
+    readLocalFolderTextEntries,
     refreshLocalFolderFiles,
   ]);
 
@@ -3524,14 +3589,15 @@ export default function App({ onNavigateHome }) {
     }
 
     const folderName = folderHandle.name || localFolderBridgeRef.current.name || "selected folder";
+    const previousBridge = localFolderBridgeRef.current;
     const currentLocalEntries = await captureBrowserWorkspaceEntries();
+    const currentDiskEntries = await readLocalFolderTextEntries(folderHandle);
     await saveAirlockSnapshot(`Before Reattach · ${folderName}`, {
       reason: "before-reattach",
       source: "local",
       linkedFolderName: folderName,
       entriesMap: currentLocalEntries,
     });
-    const currentDiskEntries = await readLocalFolderTextEntries(folderHandle);
     const reconciliation = createReconciliationResult({
       lastSynced: localFolderBridgeRef.current.lastSyncedSnapshot?.files || {},
       currentLocal: currentLocalEntries,
@@ -3547,19 +3613,25 @@ export default function App({ onNavigateHome }) {
         files: currentDiskEntries,
       });
       const nextBridge = {
-        ...localFolderBridgeRef.current,
+        ...previousBridge,
         handle: folderHandle,
         name: folderName,
         syncEnabled: true,
         lastSyncedSnapshot: baseline,
       };
 
+      await applyBrowserWorkspaceEntries(currentDiskEntries);
       localFolderBridgeRef.current = nextBridge;
       setLocalFolderBridge(nextBridge);
       setAirlockReconciliation(null);
-      await applyBrowserWorkspaceEntries(currentDiskEntries);
       openAirlockPanel();
-      await refreshLocalFolderFiles(folderHandle, activeFileRef.current);
+      try {
+        await refreshLocalFolderFiles(folderHandle, activeFileRef.current);
+      } catch (error) {
+        localFolderBridgeRef.current = previousBridge;
+        setLocalFolderBridge(previousBridge);
+        throw error;
+      }
       terminalRef.current?.writeln(
         `\x1b[36m[Airlock] "${folderName}" is already aligned. Sync is back on.\x1b[0m`,
       );
@@ -3680,23 +3752,39 @@ export default function App({ onNavigateHome }) {
       }
 
       const folderName = handle.name || "selected folder";
-
-      const hasBaseline = Boolean(localFolderBridgeRef.current.lastSyncedSnapshot);
-      const linkedBridge = {
-        ...localFolderBridgeRef.current,
-        handle,
-        name: folderName,
-        syncEnabled: false,
-      };
-      localFolderBridgeRef.current = linkedBridge;
-      setLocalFolderBridge(linkedBridge);
+      const previousBridge = localFolderBridgeRef.current;
+      const hasBaseline = Boolean(previousBridge.lastSyncedSnapshot);
 
       if (hasBaseline) {
-        await beginAirlockReattach(handle);
+        const expectedFolderName =
+          previousBridge.lastSyncedSnapshot?.linkedFolderName
+          || previousBridge.name
+          || "";
+        if (expectedFolderName && folderName !== expectedFolderName) {
+          throw new Error(`Selected "${folderName}", but this Airlock workspace expects "${expectedFolderName}". Choose the original folder or Return to WebIDE before linking a different folder.`);
+        }
+
+        const linkedBridge = {
+          ...previousBridge,
+          handle,
+          name: folderName,
+          syncEnabled: false,
+        };
+        localFolderBridgeRef.current = linkedBridge;
+        setLocalFolderBridge(linkedBridge);
+
+        try {
+          await beginAirlockReattach(handle);
+        } catch (error) {
+          localFolderBridgeRef.current = previousBridge;
+          setLocalFolderBridge(previousBridge);
+          throw error;
+        }
         return;
       }
 
       const currentLocalEntries = await captureBrowserWorkspaceEntries();
+      const currentDiskEntries = await readLocalFolderTextEntries(handle);
       if (Object.keys(currentLocalEntries).length > 0) {
         await saveAirlockSnapshot(`Before Link · ${folderName}`, {
           reason: "before-link",
@@ -3706,7 +3794,6 @@ export default function App({ onNavigateHome }) {
         });
       }
 
-      const currentDiskEntries = await readLocalFolderTextEntries(handle);
       await applyBrowserWorkspaceEntries(currentDiskEntries);
 
       const baseline = createSnapshotRecord({
@@ -3743,7 +3830,8 @@ export default function App({ onNavigateHome }) {
       }
 
       terminalRef.current?.writeln(`\x1b[31m[Airlock] ${error?.message || error}\x1b[0m`);
-
+    } finally {
+      setAirlockBusy(false);
     }
   }, [
     applyBrowserWorkspaceEntries,
@@ -3791,22 +3879,33 @@ export default function App({ onNavigateHome }) {
 
 
     const folderName = localFolderBridgeRef.current.name || "selected folder";
-    if (localFolderBridgeRef.current.syncEnabled && localFolderBridgeRef.current.handle) {
-      await handleDisableAirlockSync({ quiet: true });
-    }
+    try {
+      setAirlockBusy(true);
+      if (localFolderBridgeRef.current.syncEnabled && localFolderBridgeRef.current.handle) {
+        try {
+          await handleDisableAirlockSync({ quiet: true });
+        } catch (error) {
+          terminalRef.current?.writeln(
+            `\x1b[33m[Airlock] Could not copy the live folder before unlinking: ${error?.message || error}. Removing the stale folder handle anyway.\x1b[0m`,
+          );
+        }
+      }
 
-    const nextBridge = {
-      ...localFolderBridgeRef.current,
-      handle: null,
-      syncEnabled: false,
-    };
-    localFolderBridgeRef.current = nextBridge;
-    setLocalFolderBridge(nextBridge);
-    setAirlockReconciliation(null);
-    openAirlockPanel();
-    terminalRef.current?.writeln(
-      `\x1b[90m[Airlock] Live folder access removed for "${folderName}". The detached shadow workspace and snapshots remain available locally.\x1b[0m`,
-    );
+      const nextBridge = {
+        ...localFolderBridgeRef.current,
+        handle: null,
+        syncEnabled: false,
+      };
+      localFolderBridgeRef.current = nextBridge;
+      setLocalFolderBridge(nextBridge);
+      setAirlockReconciliation(null);
+      openAirlockPanel();
+      terminalRef.current?.writeln(
+        `\x1b[90m[Airlock] Live folder access removed for "${folderName}". The detached shadow workspace and snapshots remain available locally.\x1b[0m`,
+      );
+    } finally {
+      setAirlockBusy(false);
+    }
   }, [
     handleDisableAirlockSync,
     isHostBridgeRunning,
@@ -3832,11 +3931,23 @@ export default function App({ onNavigateHome }) {
       await prepareWorkspaceMutation("returning to the browser workspace");
 
       const folderHandle = localFolderBridgeRef.current.handle;
-      const entriesMap = browserReturnSnapshot
-        ? browserReturnSnapshot.files
-        : folderHandle && localFolderBridgeRef.current.syncEnabled
-          ? await readLocalFolderTextEntries(folderHandle)
-          : await captureBrowserWorkspaceEntries();
+      let entriesMap = null;
+
+      if (browserReturnSnapshot) {
+        entriesMap = browserReturnSnapshot.files;
+      } else if (folderHandle && localFolderBridgeRef.current.syncEnabled) {
+        try {
+          entriesMap = await readLocalFolderTextEntries(folderHandle);
+        } catch (error) {
+          terminalRef.current?.writeln(
+            `\x1b[33m[Airlock] Could not read the live folder while returning to WebIDE: ${error?.message || error}. Falling back to the latest local Airlock copy.\x1b[0m`,
+          );
+          entriesMap = localFolderBridgeRef.current.lastSyncedSnapshot?.files
+            || await captureBrowserWorkspaceEntries();
+        }
+      } else {
+        entriesMap = await captureBrowserWorkspaceEntries();
+      }
 
       const restoredEntries = await applyBrowserWorkspaceEntries(entriesMap);
 
@@ -3895,7 +4006,9 @@ export default function App({ onNavigateHome }) {
       return;
     }
 
-    void beginAirlockReattach(localFolderBridge.handle);
+    void beginAirlockReattach(localFolderBridge.handle).catch((error) => {
+      terminalRef.current?.writeln(`\x1b[31m[Airlock] ${error?.message || error}\x1b[0m`);
+    });
   }, [beginAirlockReattach, handleDisableAirlockSync, localFolderBridge.handle, localFolderBridge.syncEnabled]);
 
   const handleLocalFolderButtonClick = useCallback(() => {
@@ -5171,7 +5284,7 @@ export default function App({ onNavigateHome }) {
               lastSyncedSnapshot={localFolderBridge.lastSyncedSnapshot}
               snapshots={airlockSnapshots}
               reconciliation={airlockReconciliation}
-              busy={isAnyRuntimeBusy}
+              busy={isAnyRuntimeBusy || airlockBusy}
               onLinkFolder={() => {
                 void handleConnectLocalFolder();
               }}

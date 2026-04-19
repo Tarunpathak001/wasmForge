@@ -28,6 +28,7 @@ const browserReturnFilename = "browser-return-only.py";
 const browserReturnSource = 'print("browser workspace restored")\n';
 const failedInitialLinkFilename = "failed-initial-link-browser.py";
 const alternateSeedFilename = "alternate_seed.py";
+const staleIgnoredShadowFilename = "node_modules/stale-cache.js";
 const unreadableSeedFilename = "read-fails.py";
 
 async function ensureArtifactsDir() {
@@ -744,6 +745,17 @@ print("fs-after-unlink", is_connected())
 
 }
 
+async function verifyStaleIgnoredShadowCleanup(page) {
+  await page.getByTitle("Create file").click();
+  const input = page.getByPlaceholder("new-file.txt");
+  await input.fill(staleIgnoredShadowFilename);
+  await input.press("Enter");
+  await page.waitForTimeout(1500);
+
+  await expectNoFileRow(page, staleIgnoredShadowFilename);
+  await expectNoFileRow(page, "node_modules");
+}
+
 async function verifyDifferentFolderLinkAfterUnlink(page) {
   await openAirlockPanel(page);
   await setDirectoryPickerMockMode(page, "alternate");
@@ -832,6 +844,7 @@ async function main() {
     await verifyTypeScriptBridge(page);
     await verifyDetachAndReattach(page);
     await verifyUnlink(page);
+    await verifyStaleIgnoredShadowCleanup(page);
     await verifyDifferentFolderLinkAfterUnlink(page);
 
     await page.screenshot({
@@ -853,6 +866,7 @@ async function main() {
       typescriptBridge: "ok",
       detachReattach: "ok",
       unlink: "ok",
+      staleIgnoredShadowCleanup: "ok",
       differentFolderAfterUnlink: "ok",
       returnToWebIDE: "ok",
       consoleErrors,

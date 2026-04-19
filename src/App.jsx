@@ -421,6 +421,36 @@ function shouldIgnoreLocalFolderDirectory(name) {
   return LOCAL_FOLDER_IGNORED_DIRECTORY_NAMES.has(String(name ?? "").toLowerCase());
 }
 
+function shouldIgnoreLocalFolderPath(path) {
+  return String(path ?? "")
+    .replace(/\\/gu, "/")
+    .split("/")
+    .filter(Boolean)
+    .some((part) => shouldIgnoreLocalFolderDirectory(part));
+}
+
+function filterIgnoredLocalFolderEntries(entries = {}) {
+  const normalizedEntries = normalizeSnapshotEntries(entries);
+  return Object.fromEntries(
+    Object.entries(normalizedEntries).filter(([path]) => !shouldIgnoreLocalFolderPath(path)),
+  );
+}
+
+function createFilteredSnapshotRecord(options = {}) {
+  return createSnapshotRecord({
+    ...options,
+    files: filterIgnoredLocalFolderEntries(options.files),
+  });
+}
+
+function filterIgnoredAirlockSnapshot(snapshot) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return createFilteredSnapshotRecord(snapshot);
+}
+
 function sortLocalFolderEntries(entries) {
   return [...entries].sort((left, right) => {
     const leftDepth = left.name.split("/").length;
@@ -631,7 +661,7 @@ function normalizeLegacyAirlockSnapshot(snapshot) {
 
   try {
     if (!Array.isArray(snapshot.files)) {
-      return createSnapshotRecord(snapshot);
+      return createFilteredSnapshotRecord(snapshot);
     }
 
     const files = Object.fromEntries(
@@ -640,7 +670,7 @@ function normalizeLegacyAirlockSnapshot(snapshot) {
         .map((file) => [file.name, file.content]),
     );
 
-    return createSnapshotRecord({
+    return createFilteredSnapshotRecord({
       id: snapshot.id,
       label: snapshot.label || "Snapshot",
       reason: snapshot.reason || "legacy",
@@ -682,7 +712,7 @@ function readStoredAirlockSnapshots(workspaceName) {
     const snapshots = [
       ...parseSnapshotCollection(window.localStorage.getItem(getAirlockSnapshotsStorageKey(workspaceName))),
       ...parseSnapshotCollection(window.localStorage.getItem(getAirlockSnapshotStorageKey(workspaceName))),
-    ];
+    ].map(filterIgnoredAirlockSnapshot).filter(Boolean);
     const uniqueSnapshots = new Map();
     for (const snapshot of snapshots) {
       uniqueSnapshots.set(snapshot.id, snapshot);
@@ -703,7 +733,10 @@ function persistAirlockSnapshots(workspaceName, snapshots) {
 
   try {
     const storageKey = getAirlockSnapshotsStorageKey(workspaceName);
-    const normalizedSnapshots = snapshots.slice(0, AIRLOCK_MAX_SNAPSHOTS);
+    const normalizedSnapshots = snapshots
+      .map(filterIgnoredAirlockSnapshot)
+      .filter(Boolean)
+      .slice(0, AIRLOCK_MAX_SNAPSHOTS);
     if (normalizedSnapshots.length === 0) {
       window.localStorage.removeItem(storageKey);
       window.localStorage.removeItem(getAirlockSnapshotStorageKey(workspaceName));
@@ -718,7 +751,7 @@ function persistAirlockSnapshots(workspaceName, snapshots) {
 }
 
 function createAirlockSnapshotRecord(fileMap, label, folderName = "") {
-  return createSnapshotRecord({
+  return createFilteredSnapshotRecord({
     id: `snap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     label,
     reason: "manual",
@@ -1290,8 +1323,10 @@ function readStoredAirlockLastSyncedSnapshot(workspaceName) {
   }
 
   try {
-    return deserializeSnapshotRecord(
-      window.localStorage.getItem(getAirlockLastSyncStorageKey(workspaceName)),
+    return filterIgnoredAirlockSnapshot(
+      deserializeSnapshotRecord(
+        window.localStorage.getItem(getAirlockLastSyncStorageKey(workspaceName)),
+      ),
     );
   } catch {
     return null;
@@ -1309,7 +1344,7 @@ function persistAirlockLastSyncedSnapshot(workspaceName, snapshot) {
     return;
   }
 
-  window.localStorage.setItem(storageKey, serializeSnapshotRecord(snapshot));
+  window.localStorage.setItem(storageKey, serializeSnapshotRecord(filterIgnoredAirlockSnapshot(snapshot)));
 }
 
 function snapshotEntriesEqual(leftEntries = {}, rightEntries = {}) {
@@ -2062,10 +2097,36 @@ export default function App({ onNavigateHome }) {
       }
 
       try {
-        const filenames = await listFiles(workspaceName);
+        let filenames = await listFiles(workspaceName);
 
         if (workspaceName !== activeWorkspaceRef.current) {
           return;
+        }
+
+        const hasAirlockShadow =
+          Boolean(localFolderBridgeRef.current.lastSyncedSnapshot)
+          || Boolean(readStoredAirlockMeta(workspaceName).linkedFolderName);
+        if (hasAirlockShadow) {
+          const visibleFilenames = [];
+          let ignoredCount = 0;
+
+          for (const filename of filenames) {
+            if (shouldIgnoreLocalFolderPath(filename)) {
+              await deleteWorkspaceFile(filename, "workspace", workspaceName);
+              clearRecoveryWrite(filename, workspaceName);
+              ignoredCount += 1;
+              continue;
+            }
+
+            visibleFilenames.push(filename);
+          }
+
+          if (ignoredCount > 0) {
+            filenames = visibleFilenames;
+            terminalRef.current?.writeln(
+              `\x1b[90m[Airlock] Cleaned ${ignoredCount} cached dependency/generated file${ignoredCount === 1 ? "" : "s"} from the shadow workspace.\x1b[0m`,
+            );
+          }
         }
 
         if (filenames.length === 0) {
@@ -2117,7 +2178,7 @@ export default function App({ onNavigateHome }) {
         }
       }
     },
-    [listFiles, readFile, replaceFileList, upsertFileContent, writeFile],
+    [clearRecoveryWrite, deleteWorkspaceFile, listFiles, readFile, replaceFileList, upsertFileContent, writeFile],
   );
 
   const refreshLocalFolderFiles = useCallback(
@@ -2327,7 +2388,7 @@ export default function App({ onNavigateHome }) {
       || (getSyncedLocalFolderHandle()
         ? await readLocalFolderTextEntries(getSyncedLocalFolderHandle())
         : await captureBrowserWorkspaceEntries());
-    const snapshot = createSnapshotRecord({
+    const snapshot = createFilteredSnapshotRecord({
       label,
       reason,
       source,
@@ -3516,7 +3577,7 @@ export default function App({ onNavigateHome }) {
       await applyLocalFolderEntries(folderHandle, mergedEntries);
       await applyBrowserWorkspaceEntries(mergedEntries);
 
-      const baseline = createSnapshotRecord({
+      const baseline = createFilteredSnapshotRecord({
         label: `Synced · ${folderName}`,
         reason: "reattached",
         source: "merged",
@@ -3635,7 +3696,7 @@ export default function App({ onNavigateHome }) {
     });
 
     if (!reconciliation.hasChanges) {
-      const baseline = createSnapshotRecord({
+      const baseline = createFilteredSnapshotRecord({
         label: `Synced · ${folderName}`,
         reason: "reattached",
         source: "disk",
@@ -3693,7 +3754,7 @@ export default function App({ onNavigateHome }) {
     await prepareWorkspaceMutation("turning Airlock sync off");
     const currentDiskEntries = await readLocalFolderTextEntries(folderHandle);
     await applyBrowserWorkspaceEntries(currentDiskEntries);
-    const detachedBaseline = createSnapshotRecord({
+    const detachedBaseline = createFilteredSnapshotRecord({
       label: `Synced - ${folderName}`,
       reason: "detached",
       source: "disk",
@@ -3836,7 +3897,7 @@ export default function App({ onNavigateHome }) {
 
       await applyBrowserWorkspaceEntries(currentDiskEntries);
 
-      const baseline = createSnapshotRecord({
+      const baseline = createFilteredSnapshotRecord({
         label: `Synced · ${folderName}`,
         reason: "linked",
         source: "disk",
